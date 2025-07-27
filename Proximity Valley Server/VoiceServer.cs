@@ -31,8 +31,10 @@ namespace ProximityValleyServer
         public VoiceServer()
         {
             string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-            config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path) ?? "")
-                     ?? new ServerConfig();
+            if (File.Exists(path))
+                config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path)) ?? new ServerConfig();
+            else
+                config = new ServerConfig();
 
             udpServer = new UdpClient(config.ListenPort);
             Console.WriteLine($"{DateTime.Now}: [Server] UDP voice server started on port {config.ListenPort}");
@@ -67,7 +69,7 @@ namespace ProximityValleyServer
                 using var reader = new BinaryReader(stream);
 
                 byte packetType = reader.ReadByte();
-                int playerId = reader.ReadInt32();
+                long playerId = reader.ReadInt64();
                 byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
                 switch (packetType)

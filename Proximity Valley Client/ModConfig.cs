@@ -19,6 +19,7 @@ public class ModConfig
     public int OutputBufferSeconds { get; set; } = 2;
     public int InputVolume { get; set; } = 1;
     public float InputThreshold { get; set; } = 0.05f;
+    public int HangTimeMilliseconds { get; set; } = 250;
     public int OutputVolume{ get; set; } = 1;
     public bool PushToTalk { get; set; } = false;
 
@@ -30,4 +31,5 @@ public class ModConfig
     public SButton PushToTalkButton { get; set; } = SButton.C;
     public SButton GlobalTalkButton { get; set; } = SButton.V;
     public SButton ToggleMute { get; set; } = SButton.G;
+    public SButton ToggleDevOptions { get; set; } = SButton.None;
 }

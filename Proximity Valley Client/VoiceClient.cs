@@ -1,5 +1,8 @@
-﻿using NAudio.Wave;
+﻿using Microsoft.Xna.Framework;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using StardewModdingAPI;
+using StardewValley;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,6 +21,9 @@ namespace ProximityValley
         private BufferedWaveProvider waveProvider;
         private WaveOutEvent waveOut;
         private WaveInEvent waveIn;
+
+        private DateTime lastVoiceDetected = DateTime.MinValue;
+
 
         public enum PacketType : byte
         {
@@ -47,7 +53,7 @@ namespace ProximityValley
                 SetupInput();
 
                 // erste Registrierung
-                SendPacket((byte)PacketType.Connect, modEntry.playerID.GetHashCode(), Array.Empty<byte>());
+                SendPacket((byte)PacketType.Connect, modEntry.playerID, Array.Empty<byte>());
                 Monitor.Log("[Voice] Connecting to Voice Server", LogLevel.Debug);
 
                 // Empfangsschleife
@@ -61,7 +67,7 @@ namespace ProximityValley
                     using var reader = new BinaryReader(stream);
 
                     byte pType = reader.ReadByte();
-                    int playerId = reader.ReadInt32();
+                    long playerId = reader.ReadInt64();
                     byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
                     if (pType == (byte)PacketType.Audio)
@@ -76,10 +82,10 @@ namespace ProximityValley
             }
         }
 
-        private void ProcessIncomingAudio(int playerId, byte[] audioData)
+        private void ProcessIncomingAudio(long playerId, byte[] audioData)
         {
             // 1) kein Self‑Audio
-            if (playerId == modEntry.playerID.GetHashCode())
+            if (playerId == modEntry.playerID)
                 return;
 
             // 2) nur echte Daten
@@ -106,18 +112,22 @@ namespace ProximityValley
             {
                 try
                 {
+                    // wenn gemuted, dann nichts senden
+                    if (modEntry.isMuted) return;
+
+                    // wenn PushToTalk aktiviert ist, dann nur senden, wenn Taste gedrückt
+                    if (Config.PushToTalk && !modEntry.isPushToTalking) return;
+
+                    //if (micVolumeLevel < Config.InputThreshold) return;
+
+                    if (!ShouldSendAudio(e.Buffer)) return;
+
                     OnDataAvailable(s, e);
 
                     // **roh**es PCM senden – wird in SendPacket verschlüsselt
                     byte[] audioPayload = e.Buffer.Take(e.BytesRecorded).ToArray();
 
-                    bool shouldSend =
-                        micVolumeLevel > Config.InputThreshold && // Mikrofonpegel über Schwelle
-                        (!Config.PushToTalk || (Config.PushToTalk && modEntry.isPushToTalking)) // Push-to-Talk aktiv und Taste gedrückt
-                        && !modEntry.isMuted; // nicht stummgeschaltet
-
-                    if (shouldSend)
-                        SendPacket((byte)PacketType.Audio, modEntry.playerID.GetHashCode(), audioPayload);
+                    SendPacket((byte)PacketType.Audio, modEntry.playerID, audioPayload);
                 }
                 catch (Exception ex)
                 {
@@ -143,6 +153,7 @@ namespace ProximityValley
             {
                 Volume = Config.OutputVolume
             };
+
 
             waveOut = new WaveOutEvent { DeviceNumber = Config.WaveOutDevice };
             waveOut.Init(volumeProvider);
@@ -174,7 +185,7 @@ namespace ProximityValley
             micVolumeLevel = (float)Math.Sqrt(sumSquares / sampleBuffer.Length) / short.MaxValue;
         }
 
-        public void SendPacket(byte packetType, int playerId, byte[] payload)
+        public void SendPacket(byte packetType, long playerId, byte[] payload)
         {
             try
             {
@@ -195,6 +206,56 @@ namespace ProximityValley
                 Monitor.Log($"[Voice] SendPacket ERROR: {ex.Message}", LogLevel.Warn);
             }
         }
+
+        private readonly int HangTimeMilliseconds = 250;
+
+        private bool ShouldSendAudio(byte[] buffer)
+        {
+            float rms = CalculateRMS(buffer);
+
+            if (rms > Config.InputThreshold)
+            {
+                lastVoiceDetected = DateTime.UtcNow;
+                return true;
+            }
+
+            return (DateTime.UtcNow - lastVoiceDetected).TotalMilliseconds < HangTimeMilliseconds;
+        }
+
+        private float CalculateRMS(byte[] buffer)
+        {
+            int sampleCount = buffer.Length / 2;
+            double sum = 0;
+
+            for (int i = 0; i < buffer.Length; i += 2)
+            {
+                short sample = BitConverter.ToInt16(buffer, i);
+                sum += sample * sample;
+            }
+
+            return (float)Math.Sqrt(sum / sampleCount) / short.MaxValue;
+        }
+
+        public (float volume, float pan) GetVolumeAndPan(Farmer local, Farmer remote)
+        {
+            // 1. Entfernung berechnen
+            float distance = Vector2.Distance(local.Position, remote.Position);
+            float maxDistance = 32f * Game1.tileSize; // Max hörbarer Bereich
+
+            // 2. Lautstärke abnehmen mit Distanz (linear oder exponentiell)
+            float volume = Math.Max(0f, 1f - (distance / maxDistance));
+            volume = MathF.Pow(volume, 1.5f); // optional: sanfterer Abfall
+
+            // 3. Richtung für Panning (Links/Rechts)
+            float dx = remote.Position.X - local.Position.X;
+            float pan = Math.Clamp(dx / maxDistance, -1f, 1f); // -1 = links, 1 = rechts
+
+            return (volume, pan);
+        }
+
+
+
+        #region AES Encryption
 
         private Aes CreateAes()
         {
@@ -219,5 +280,7 @@ namespace ProximityValley
             using var dec = aes.CreateDecryptor();
             return dec.TransformFinalBlock(data, 0, data.Length);
         }
+
+        #endregion
     }
 }

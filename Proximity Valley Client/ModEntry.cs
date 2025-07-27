@@ -16,9 +16,10 @@ namespace ProximityValley
         private string currentMap = "World";
         private bool isWalkieTalkie = false;
 
-        internal int playerID = -1; // Unique ID for the player, initialized to -1
+        internal long playerID = -1; // Unique ID for the player, initialized to -1
         internal bool isPushToTalking = false;
         internal bool isMuted = false;
+        internal bool devOptionsEnabled = false; // Flag for enabling developer options
 
         internal static ModEntry Instance;
         private IModHelper Helper;
@@ -72,6 +73,10 @@ namespace ProximityValley
             {
                 isMuted = !isMuted;
             }
+            else if (e.Button == Config.ToggleDevOptions)
+            {
+                devOptionsEnabled = !devOptionsEnabled;
+            }
         }
 
         private void OnRenderedHud(object sender, RenderedHudEventArgs e)
@@ -80,12 +85,17 @@ namespace ProximityValley
             // Mic Volume/Talking Indicator
             if (voiceClient.micVolumeLevel > Config.InputThreshold)
             {
-                int height = (int)(100 * voiceClient.micVolumeLevel);
+                int height = Math.Clamp((int)(200 * voiceClient.micVolumeLevel), 0, 100);
+
+                b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 120, 20, 100), Color.White);
                 b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
-                if (!isMuted)
-                    SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80);
+
+                if (isMuted)
+                    SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+                else if (Config.PushToTalk && !isPushToTalking)
+                    SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
                 else
-                    SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80);
+                    SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
             }
 
             // Players Indicator
@@ -96,7 +106,7 @@ namespace ProximityValley
                     continue;
 
                 // Positionsvergleich
-                string arrow = "$"; // Default: auf dir selbst
+                string arrow = "";
                 if (farmer != Game1.player)
                 {
                     var myPos = Game1.player.Position;
@@ -119,11 +129,14 @@ namespace ProximityValley
                             arrow = "^";
                     }
 
-                    if (dx + dy < 1)
+                    if (dx + dy < Game1.tileSize)
                         arrow = "$";
                 }
 
-                SpriteText.drawString(b, $"{farmer.displayName} {arrow}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50));
+                string devExtraPrefix = devOptionsEnabled ? $"{farmer.Position} " : "";
+                string devExtraSuffix = devOptionsEnabled ? $" - {farmer.currentLocation.Name}" : "";
+
+                SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50), drawBGScroll: 0);
 
                 index++;
             }
@@ -148,7 +161,7 @@ namespace ProximityValley
             };
 
 
-            playerID = Game1.player.UniqueMultiplayerID.GetHashCode();
+            playerID = Game1.player.UniqueMultiplayerID;
 
 
             // GMCM - Integration
@@ -246,21 +259,36 @@ namespace ProximityValley
                     name: () => "Input Volume",
                     tooltip: () => "Lautstärke des Mikrofons (recommended 0-5)",
                     getValue: () => Config.InputVolume,
-                    setValue: value => Config.InputVolume = value
+                    setValue: value => Config.InputVolume = value,
+                    min: 0,
+                    max: 10
                 );
                 gmcm.AddNumberOption(
                     mod: this.ModManifest,
                     name: () => "Output Volume",
                     tooltip: () => "Lautstärke der Wiedergabe (recommended 0-5)",
                     getValue: () => Config.OutputVolume,
-                    setValue: value => Config.OutputVolume = value
+                    setValue: value => Config.OutputVolume = value,
+                    min: 0,
+                    max: 10
                 );
                 gmcm.AddNumberOption(
                     mod: this.ModManifest,
                     name: () => "Input Threshold",
                     tooltip: () => "Schwelle für Mikrofonaktivierung (0.0-1.0)",
                     getValue: () => (int)(Config.InputThreshold * 100),
-                    setValue: value => Config.InputThreshold = value / 100f
+                    setValue: value => Config.InputThreshold = value / 100f,
+                    min: 0,
+                    max: 100
+                );
+                gmcm.AddNumberOption(
+                    mod: this.ModManifest,
+                    name: () => "Hang Time (ms)",
+                    tooltip: () => "Zeit, die das Mikrofon nach unterschreitung des Thresholds an bleibt (ms)",
+                    getValue: () => Config.HangTimeMilliseconds,
+                    setValue: value => Config.HangTimeMilliseconds = value,
+                    min: 0,
+                    max: 1000
                 );
                 gmcm.AddBoolOption(
                     mod: this.ModManifest,
