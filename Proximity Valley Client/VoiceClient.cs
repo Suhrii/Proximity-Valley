@@ -1,8 +1,11 @@
 ﻿using Microsoft.Xna.Framework;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using Proximity_Valley;
 using StardewModdingAPI;
+using StardewModdingAPI.Events;
 using StardewValley;
+using System.IO;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -23,6 +26,17 @@ namespace ProximityValley
         private WaveInEvent waveIn;
 
         private DateTime lastVoiceDetected = DateTime.MinValue;
+
+        // enthält für jeden anderen Spieler den aktuellen Audio‑Stream
+        private readonly Dictionary<long, PlayerAudioStream> _streams = new Dictionary<long, PlayerAudioStream>();
+
+        // enthält für jeden Spieler eine manuell einstellbare Lautstärke (0.0–1.0)
+        // Du kannst das später per In‑Game‑Menü befüllen
+        private readonly Dictionary<long, float> _customVolumes = new Dictionary<long, float>();
+
+        // enthält für jeden Spieler einen manuell einstellbaren Pan‑Wert (‑1.0 links bis +1.0 rechts)
+        private readonly Dictionary<long, float> _customPans = new Dictionary<long, float>();
+
 
 
         public enum PacketType : byte
@@ -85,18 +99,65 @@ namespace ProximityValley
         private void ProcessIncomingAudio(long playerId, byte[] audioData)
         {
             // 1) kein Self‑Audio
-            if (playerId == modEntry.playerID)
-                return;
+            //if (playerId == modEntry.playerID)
+            //    return;
 
             // 2) nur echte Daten
             if (audioData.Length == 0)
                 return;
 
-            waveProvider.AddSamples(audioData, 0, audioData.Length);
-            if (waveOut.PlaybackState != PlaybackState.Playing)
-                waveOut.Play();
+
+            // hol (oder erstelle) den Stream für diesen Spieler
+            if (!_streams.TryGetValue(playerId, out PlayerAudioStream stream))
+            {
+                // initiale Lautstärke und Pan aus der Distanzberechnung
+                (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId));
+
+                // falls der Spieler manuell einen Wert gesetzt hat, verwende den stattdessen
+                if (_customVolumes.TryGetValue(playerId, out float customVolume))
+                    volume = customVolume;
+                if (_customPans.TryGetValue(playerId, out float customPan))
+                    pan = customPan;
+
+                stream = new PlayerAudioStream(
+                    new WaveFormat(Config.SampleRate, Config.Bits, 1),
+                    Config.OutputBufferSeconds,
+                    Config.WaveOutDevice,
+                    volume,
+                    pan
+                );
+                _streams[playerId] = stream;
+            }
+
+            // füge die neuen Samples hinzu
+            stream.AddSamples(audioData, 0, audioData.Length);
+
+            //waveProvider.AddSamples(audioData, 0, audioData.Length);
+            //if (waveOut.PlaybackState != PlaybackState.Playing)
+            //    waveOut.Play();
 
             Monitor.Log($"[Voice] Received {audioData.Length} bytes from {playerId}", LogLevel.Trace);
+        }
+
+        public void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
+        {
+            if (!Context.IsWorldReady)
+                return;
+
+            foreach (var kvp in _streams.ToList())  // ToList, damit wir nicht währenddessen ändern
+            {
+                long playerId = kvp.Key;
+                PlayerAudioStream stream = kvp.Value;
+
+                // Basiswerte aus Entfernung/Direktion
+                (float baseVolume, float basePan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId) ?? Game1.player);
+
+                // überschreibe mit manuell gesetzten Werten, falls vorhanden
+                float volume = _customVolumes.ContainsKey(playerId) ? _customVolumes[playerId] : baseVolume;
+                float pan = _customPans.ContainsKey(playerId) ? _customPans[playerId] : basePan;
+
+                stream.UpdatePanAndVolume(pan, volume);
+            }
         }
 
         private void SetupInput()
@@ -236,6 +297,8 @@ namespace ProximityValley
 
         public (float volume, float pan) GetVolumeAndPan(Farmer local, Farmer remote)
         {
+            if (local == null || remote == null) return (0f, 0f);
+
             // 1. Entfernung berechnen
             float distance = Vector2.Distance(local.Position, remote.Position);
             float maxDistance = 32f * Game1.tileSize; // Max hörbarer Bereich

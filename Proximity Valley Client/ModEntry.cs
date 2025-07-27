@@ -1,9 +1,11 @@
 ﻿using GenericModConfigMenu; // GMCM-API
 using Microsoft.Xna.Framework;
+using Proximity_Valley;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using System.IO;
 using System.Text;
 
 namespace ProximityValley
@@ -39,9 +41,10 @@ namespace ProximityValley
             helper.Events.Display.RenderedHud += OnRenderedHud;
 
             helper.Events.Input.ButtonPressed += Input_ButtonPressed;
-            helper.Events.Input.ButtonReleased += Input_ButtonReleased;
-
+            helper.Events.Input.ButtonReleased += Input_ButtonReleased; 
+            helper.Events.GameLoop.UpdateTicked += voiceClient.OnUpdateTicked;
         }
+
 
         private void Input_ButtonReleased(object? sender, ButtonReleasedEventArgs e)
         {
@@ -316,6 +319,16 @@ namespace ProximityValley
                     tooltip: () => "Taste zum Stummschalten/Entstummen",
                     getValue: () => Config.ToggleMute,
                     setValue: value => Config.ToggleMute = value
+                );
+
+                gmcm.AddNumberOption(
+                    mod: this.ModManifest,
+                    name: () => "Test Panning",
+                    tooltip: () => "Test-Panning für Audio (-1.0 - 1.0)",
+                    getValue: () => (int)(Config.TestPanning * 100),
+                    setValue: value => Config.TestPanning = value / 100f,
+                    min: -100,
+                    max: 100
                 );
             }
 

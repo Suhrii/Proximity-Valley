@@ -32,4 +32,6 @@ public class ModConfig
     public SButton GlobalTalkButton { get; set; } = SButton.V;
     public SButton ToggleMute { get; set; } = SButton.G;
     public SButton ToggleDevOptions { get; set; } = SButton.None;
+
+    public float TestPanning { get; set; } = 0f;
 }
