@@ -21,12 +21,10 @@ namespace ProximityValley
         internal bool isMuted = false;
         internal bool devOptionsEnabled = false; // Flag for enabling developer options
 
-        internal static ModEntry Instance;
         private IModHelper Helper;
 
         public override void Entry(IModHelper helper)
         {
-            Instance = this;
             Helper = helper;
 
             Monitor.Log($"[Voice] Boot", LogLevel.Debug);
@@ -50,7 +48,7 @@ namespace ProximityValley
             if (e.Button == Config.GlobalTalkButton)
             {
                 isWalkieTalkie = false;
-                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(currentMap));
+                voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(currentMap));
             }
             else if (e.Button == Config.PushToTalkButton)
             {
@@ -63,7 +61,7 @@ namespace ProximityValley
             if (e.Button == Config.GlobalTalkButton)
             {
                 isWalkieTalkie = true;
-                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes("World"));
+                voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes("World"));
             }
             else if (e.Button == Config.PushToTalkButton)
             {
@@ -83,20 +81,20 @@ namespace ProximityValley
         {
             var b = e.SpriteBatch;
             // Mic Volume/Talking Indicator
-            if (voiceClient.micVolumeLevel > Config.InputThreshold)
-            {
-                int height = Math.Clamp((int)(200 * voiceClient.micVolumeLevel), 0, 100);
 
-                b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 120, 20, 100), Color.White);
-                b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
+            int height = Math.Clamp((int)(200 * voiceClient.micVolumeLevel), 0, 100);
 
-                if (isMuted)
-                    SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
-                else if (Config.PushToTalk && !isPushToTalking)
-                    SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
-                else
-                    SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
-            }
+            b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 120, 20, 100), Color.White);
+            b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
+            b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - Math.Clamp((int)(Config.InputThreshold * 200), 0, 100), 20, 5), Color.DarkRed);
+
+            if (isMuted)
+                SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            else if (Config.PushToTalk && !isPushToTalking)
+                SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            else
+                SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+
 
             // Players Indicator
             int index = 0;
@@ -152,7 +150,7 @@ namespace ProximityValley
             {
                 try
                 {
-                    voiceClient.SendPacket((byte)VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
+                    voiceClient.SendPacket(VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
                 }
                 catch
                 {
@@ -332,8 +330,13 @@ namespace ProximityValley
                                 e.NewLocation.Name.Contains("Mine") ? "Mine" :
                                 e.NewLocation.Name;
                 currentMap = map;
-                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(map));
+                voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(map));
             }
+        }
+
+        public Farmer? GetFarmerByID(long id)
+        {
+            return Game1.getOnlineFarmers().FirstOrDefault(p => p?.UniqueMultiplayerID == id);
         }
 
     }

@@ -53,7 +53,7 @@ namespace ProximityValley
                 SetupInput();
 
                 // erste Registrierung
-                SendPacket((byte)PacketType.Connect, modEntry.playerID, Array.Empty<byte>());
+                SendPacket(PacketType.Connect, modEntry.playerID, Array.Empty<byte>());
                 Monitor.Log("[Voice] Connecting to Voice Server", LogLevel.Debug);
 
                 // Empfangsschleife
@@ -118,16 +118,14 @@ namespace ProximityValley
                     // wenn PushToTalk aktiviert ist, dann nur senden, wenn Taste gedrückt
                     if (Config.PushToTalk && !modEntry.isPushToTalking) return;
 
-                    //if (micVolumeLevel < Config.InputThreshold) return;
+                    OnDataAvailable(s, e);
 
                     if (!ShouldSendAudio(e.Buffer)) return;
-
-                    OnDataAvailable(s, e);
 
                     // **roh**es PCM senden – wird in SendPacket verschlüsselt
                     byte[] audioPayload = e.Buffer.Take(e.BytesRecorded).ToArray();
 
-                    SendPacket((byte)PacketType.Audio, modEntry.playerID, audioPayload);
+                    SendPacket(PacketType.Audio, modEntry.playerID, audioPayload);
                 }
                 catch (Exception ex)
                 {
@@ -185,14 +183,14 @@ namespace ProximityValley
             micVolumeLevel = (float)Math.Sqrt(sumSquares / sampleBuffer.Length) / short.MaxValue;
         }
 
-        public void SendPacket(byte packetType, long playerId, byte[] payload)
+        public void SendPacket(PacketType packetType, long playerId, byte[] payload)
         {
             try
             {
                 using var stream = new MemoryStream();
                 using var writer = new BinaryWriter(stream);
 
-                writer.Write(packetType);
+                writer.Write((byte)packetType);
                 writer.Write(playerId);
                 writer.Write(payload);
 
