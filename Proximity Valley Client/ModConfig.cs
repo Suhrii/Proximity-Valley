@@ -29,4 +29,5 @@ public class ModConfig
     // Keybinds
     public SButton PushToTalkButton { get; set; } = SButton.C;
     public SButton GlobalTalkButton { get; set; } = SButton.V;
+    public SButton ToggleMute { get; set; } = SButton.G;
 }

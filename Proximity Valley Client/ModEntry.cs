@@ -1,10 +1,12 @@
 ﻿using GenericModConfigMenu; // GMCM-API
 using Microsoft.Xna.Framework;
-using NAudio.Wave;
+using Microsoft.Xna.Framework.Graphics;
+using Newtonsoft.Json;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using System;
 using System.Text;
 
 namespace ProximityValley
@@ -14,17 +16,20 @@ namespace ProximityValley
         private VoiceClient voiceClient;
         private ModConfig Config;
 
-        private string currentMap = "Unknown";
+        private string currentMap = "World";
         private bool isWalkieTalkie = false;
 
         internal int playerID = -1; // Unique ID for the player, initialized to -1
         internal bool isPushToTalking = false;
+        internal bool isMuted = false;
 
         internal static ModEntry Instance;
+        private IModHelper Helper;
 
         public override void Entry(IModHelper helper)
         {
             Instance = this;
+            Helper = helper;
 
             Monitor.Log($"[Voice] Boot", LogLevel.Debug);
             Config = helper.ReadConfig<ModConfig>();
@@ -36,19 +41,107 @@ namespace ProximityValley
             helper.Events.GameLoop.GameLaunched += OnGameLaunched;
             helper.Events.Player.Warped += OnWarped;
             helper.Events.Display.RenderedHud += OnRenderedHud;
-            Helper.Events.GameLoop.ReturnedToTitle += GameLoop_ReturnedToTitle; ;
+            helper.Events.GameLoop.ReturnedToTitle += GameLoop_ReturnedToTitle;
 
             helper.Events.Input.ButtonPressed += Input_ButtonPressed;
             helper.Events.Input.ButtonReleased += Input_ButtonReleased;
 
-            /*// GMCM - Integration
-            var gmcm = helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
+        }
+
+        private void GameLoop_ReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
+        {
+            voiceClient.SendPacket((byte)VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
+        }
+
+        private void Input_ButtonReleased(object? sender, ButtonReleasedEventArgs e)
+        {
+            if (e.Button == Config.GlobalTalkButton)
+            {
+                isWalkieTalkie = false;
+                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(currentMap));
+            }
+            else if (e.Button == Config.PushToTalkButton)
+            {
+                isPushToTalking = false;
+            }
+        }
+
+        private void Input_ButtonPressed(object? sender, ButtonPressedEventArgs e)
+        {
+            if (e.Button == Config.GlobalTalkButton)
+            {
+                isWalkieTalkie = true;
+                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes("World"));
+            }
+            else if (e.Button == Config.PushToTalkButton)
+            {
+                isPushToTalking = true;
+            }
+            else if (e.Button == Config.ToggleMute)
+            {
+                isMuted = !isMuted;
+            }
+        }
+
+        private void OnRenderedHud(object sender, RenderedHudEventArgs e)
+        {
+            var b = e.SpriteBatch;
+            // Mic Volume/Talking Indicator
+            if (voiceClient.micVolumeLevel > Config.InputThreshold)
+            {
+                int height = (int)(100 * voiceClient.micVolumeLevel);
+                b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
+                if (!isMuted)
+                    SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80);
+                else
+                    SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80);
+            }
+
+            // Players Indicator
+            int index = 0;
+            foreach (var farmer in Game1.getOnlineFarmers())
+            {
+                if (farmer.currentLocation != Game1.player.currentLocation)
+                    continue;
+
+                SpriteText.drawString(b, $"{farmer.displayName}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50));
+
+                index++;
+            }
+
+
+        }
+
+
+
+        private void OnGameLaunched(object sender, EventArgs e)
+        {
+            Monitor.Log($"[Voice] Startet", LogLevel.Debug);
+
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            {
+                try
+                {
+                    voiceClient.SendPacket((byte)VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
+                }
+                catch
+                {
+                    // Ignoriere Fehler beim Shutdown
+                }
+            };
+
+
+            playerID = Game1.player.UniqueMultiplayerID.GetHashCode();
+
+
+            // GMCM - Integration
+            var gmcm = Helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
             if (gmcm != null)
             {
                 gmcm.Register(
                     mod: this.ModManifest,
                     reset: () => Config = new ModConfig(),
-                    save: () => helper.WriteConfig(Config)
+                    save: () => Helper.WriteConfig(Config)
                 );
 
                 gmcm.AddTextOption(
@@ -131,62 +224,7 @@ namespace ProximityValley
                     setValue: value => Config.WaveOutDevice = value
                 );
             }
-*/
-        }
 
-        private void GameLoop_ReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
-        {
-            voiceClient.SendPacket((byte)VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
-        }
-
-        private void Input_ButtonReleased(object? sender, ButtonReleasedEventArgs e)
-        {
-            if (e.Button == Config.GlobalTalkButton)
-            {
-                isWalkieTalkie = false;
-                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(currentMap));
-            }
-            else if (e.Button == Config.PushToTalkButton)
-            {
-                isPushToTalking = false;
-            }
-        }
-
-        private void Input_ButtonPressed(object? sender, ButtonPressedEventArgs e)
-        {
-            if (e.Button == Config.GlobalTalkButton)
-            {
-                isWalkieTalkie = true;
-                voiceClient.SendPacket((byte)VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes("World"));
-            }
-            else if (e.Button == Config.PushToTalkButton)
-            {
-                isPushToTalking = true;
-            }
-        }
-
-        private void OnRenderedHud(object sender, RenderedHudEventArgs e)
-        {
-            if (voiceClient.micVolumeLevel > Config.InputThreshold)
-            {
-                var b = e.SpriteBatch;
-                int height = (int)(100 * voiceClient.micVolumeLevel);
-                b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
-                SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80);
-            }
-        }
-
-
-        private void OnGameLaunched(object sender, EventArgs e)
-        {
-            Monitor.Log($"[Voice] Startet", LogLevel.Debug);
-
-            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
-            {
-                voiceClient.SendPacket((byte)VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
-            };
-
-            playerID = Game1.player.UniqueMultiplayerID.GetHashCode();
         }
 
         private void OnWarped(object sender, WarpedEventArgs e)

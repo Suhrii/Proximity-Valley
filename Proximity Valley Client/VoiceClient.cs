@@ -112,8 +112,9 @@ namespace ProximityValley
                     byte[] audioPayload = e.Buffer.Take(e.BytesRecorded).ToArray();
 
                     bool shouldSend =
-                        micVolumeLevel > Config.InputThreshold &&
-                        (!Config.PushToTalk || (Config.PushToTalk && modEntry.isPushToTalking));
+                        micVolumeLevel > Config.InputThreshold && // Mikrofonpegel über Schwelle
+                        (!Config.PushToTalk || (Config.PushToTalk && modEntry.isPushToTalking)) // Push-to-Talk aktiv und Taste gedrückt
+                        && !modEntry.isMuted; // nicht stummgeschaltet
 
                     if (shouldSend)
                         SendPacket((byte)PacketType.Audio, modEntry.playerID.GetHashCode(), audioPayload);
