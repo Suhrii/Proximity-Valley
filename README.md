@@ -48,11 +48,6 @@ Alle Einstellungen können über das Generic Mod Config Menu im Spiel oder direk
 | `GlobalTalkButton`      | Taste für globales Sprechen               |
 | `ToggleMute`            | Taste zum Stummschalten                   |
 
-## Python-Erweiterung
-
-Im Ordner `Proximity Valley Client/Server/Proximity Valley Server` befindet sich `voice_server.py`.
-Dieses Skript kann genutzt werden, um Spieler anhand ihrer Position automatisch in verschiedene Mumble-Kanäle zu verschieben.
-
 ## Entwicklung
 
 Zum Kompilieren des Mods und des Servers einfach die beiden Projekte mit `dotnet build` bauen oder die zugehörige Solution öffnen.
