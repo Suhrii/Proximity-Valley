@@ -35,12 +35,12 @@ namespace ProximityValleyServer
                      ?? new ServerConfig();
 
             udpServer = new UdpClient(config.ListenPort);
-            Console.WriteLine($"[Server] UDP voice server started on port {config.ListenPort}");
+            Console.WriteLine($"{DateTime.Now}: [Server] UDP voice server started on port {config.ListenPort}");
         }
 
         public async Task StartAsync()
         {
-            Console.WriteLine("[Server] Voice server running...");
+            Console.WriteLine($"{DateTime.Now}: [Server] Voice server running...");
 
             while (true)
             {
@@ -54,7 +54,7 @@ namespace ProximityValleyServer
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Server] Receive ERROR: {ex}");
+                    Console.WriteLine($"{DateTime.Now}: [Server] Receive ERROR: {ex}");
                 }
             }
         }
@@ -104,7 +104,7 @@ namespace ProximityValleyServer
                                 }
                                 catch (Exception sendEx)
                                 {
-                                    Console.WriteLine($"[Server] Send error to {target}: {sendEx.Message}");
+                                    Console.WriteLine($"{DateTime.Now}: [Server] Send error to {target}: {sendEx.Message}");
                                 }
                             }
                         }
@@ -114,36 +114,36 @@ namespace ProximityValleyServer
                         string mapName = Encoding.UTF8.GetString(payload);
                         lock (clientMap)
                             clientMap[sender] = mapName;
-                        Console.WriteLine($"[Server] Updated map of {sender} ({playerId}) to '{mapName}'");
+                        Console.WriteLine($"{DateTime.Now}: [Server] Updated map of {sender} ({playerId}) to '{mapName}'");
                         break;
 
                     case (byte)PacketType.Connect:
                         lock (clientMap)
                             clientMap[sender] = "World";
-                        Console.WriteLine($"[Server] Connected {sender} ({playerId})");
+                        Console.WriteLine($"{DateTime.Now}: [Server] Connected {sender} ({playerId})");
                         break;
 
                     case (byte)PacketType.Disconnect:
                         lock (clientMap)
                             clientMap.Remove(sender);
-                        Console.WriteLine($"[Server] Disconnected {sender} ({playerId})");
+                        Console.WriteLine($"{DateTime.Now}: [Server] Disconnected {sender} ({playerId})");
                         break;
 
                     default:
-                        Console.WriteLine($"[Server] Unknown packet type: {packetType}");
+                        Console.WriteLine($"{DateTime.Now}: [Server] Unknown packet type: {packetType}");
                         break;
                 }
             }
             catch (Exception innerEx)
             {
-                Console.WriteLine($"[Server] Task ERROR: {innerEx}");
+                Console.WriteLine($"{DateTime.Now}: [Server] Task ERROR: {innerEx}");
             }
         }
 
         public void Stop()
         {
             udpServer.Close();
-            Console.WriteLine("[Server] UDP server stopped.");
+            Console.WriteLine($"{DateTime.Now}: [Server] UDP server stopped.");
         }
 
         /* ---------- AES helpers ---------- */

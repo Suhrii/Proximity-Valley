@@ -1,12 +1,9 @@
 ﻿using GenericModConfigMenu; // GMCM-API
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
-using Newtonsoft.Json;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
-using System;
 using System.Text;
 
 namespace ProximityValley
@@ -41,16 +38,10 @@ namespace ProximityValley
             helper.Events.GameLoop.GameLaunched += OnGameLaunched;
             helper.Events.Player.Warped += OnWarped;
             helper.Events.Display.RenderedHud += OnRenderedHud;
-            helper.Events.GameLoop.ReturnedToTitle += GameLoop_ReturnedToTitle;
 
             helper.Events.Input.ButtonPressed += Input_ButtonPressed;
             helper.Events.Input.ButtonReleased += Input_ButtonReleased;
 
-        }
-
-        private void GameLoop_ReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
-        {
-            voiceClient.SendPacket((byte)VoiceClient.PacketType.Disconnect, playerID, Array.Empty<byte>());
         }
 
         private void Input_ButtonReleased(object? sender, ButtonReleasedEventArgs e)
@@ -104,14 +95,40 @@ namespace ProximityValley
                 if (farmer.currentLocation != Game1.player.currentLocation)
                     continue;
 
-                SpriteText.drawString(b, $"{farmer.displayName}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50));
+                // Positionsvergleich
+                string arrow = "$"; // Default: auf dir selbst
+                if (farmer != Game1.player)
+                {
+                    var myPos = Game1.player.Position;
+                    var otherPos = farmer.Position;
+                    float dx = otherPos.X - myPos.X;
+                    float dy = otherPos.Y - myPos.Y;
+
+                    if (Math.Abs(dx) > Math.Abs(dy))
+                    {
+                        if (dx > 0)
+                            arrow = ">";
+                        else if (dx < 0)
+                            arrow = "<";
+                    }
+                    else
+                    {
+                        if (dy > 0)
+                            arrow = "v";
+                        else if (dy < 0)
+                            arrow = "^";
+                    }
+
+                    if (dx + dy < 1)
+                        arrow = "$";
+                }
+
+                SpriteText.drawString(b, $"{farmer.displayName} {arrow}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50));
 
                 index++;
             }
 
-
         }
-
 
 
         private void OnGameLaunched(object sender, EventArgs e)
@@ -223,6 +240,57 @@ namespace ProximityValley
                     getValue: () => Config.WaveOutDevice,
                     setValue: value => Config.WaveOutDevice = value
                 );
+
+                gmcm.AddNumberOption(
+                    mod: this.ModManifest,
+                    name: () => "Input Volume",
+                    tooltip: () => "Lautstärke des Mikrofons (recommended 0-5)",
+                    getValue: () => Config.InputVolume,
+                    setValue: value => Config.InputVolume = value
+                );
+                gmcm.AddNumberOption(
+                    mod: this.ModManifest,
+                    name: () => "Output Volume",
+                    tooltip: () => "Lautstärke der Wiedergabe (recommended 0-5)",
+                    getValue: () => Config.OutputVolume,
+                    setValue: value => Config.OutputVolume = value
+                );
+                gmcm.AddNumberOption(
+                    mod: this.ModManifest,
+                    name: () => "Input Threshold",
+                    tooltip: () => "Schwelle für Mikrofonaktivierung (0.0-1.0)",
+                    getValue: () => (int)(Config.InputThreshold * 100),
+                    setValue: value => Config.InputThreshold = value / 100f
+                );
+                gmcm.AddBoolOption(
+                    mod: this.ModManifest,
+                    name: () => "Push to Talk",
+                    tooltip: () => "Aktiviere Push-to-Talk (Taste gedrückt halten zum Sprechen)",
+                    getValue: () => Config.PushToTalk,
+                    setValue: value => Config.PushToTalk = value
+                );
+
+                gmcm.AddKeybind(
+                    mod: this.ModManifest,
+                    name: () => "Push to Talk",
+                    tooltip: () => "Taste für Push-to-Talk",
+                    getValue: () => Config.PushToTalkButton,
+                    setValue: value => Config.PushToTalkButton = value
+                );
+                gmcm.AddKeybind(
+                    mod: this.ModManifest,
+                    name: () => "Global Talk",
+                    tooltip: () => "Taste für globales Sprechen (Walkie-Talkie)",
+                    getValue: () => Config.GlobalTalkButton,
+                    setValue: value => Config.GlobalTalkButton = value
+                );
+                gmcm.AddKeybind(
+                    mod: this.ModManifest,
+                    name: () => "Toggle Mute",
+                    tooltip: () => "Taste zum Stummschalten/Entstummen",
+                    getValue: () => Config.ToggleMute,
+                    setValue: value => Config.ToggleMute = value
+                );
             }
 
         }
@@ -231,6 +299,7 @@ namespace ProximityValley
         {
             if (e.IsLocalPlayer)
             {
+                // Eventuell noch mehr ausnahmen einbauen damit Häuser nicht zählen als andere Map
                 string map = e.NewLocation.Name.Contains("Farm") ? "Farm" :
                                 e.NewLocation.Name.Contains("Mine") ? "Mine" :
                                 e.NewLocation.Name;
