@@ -1,0 +1,16 @@
+{
+  "Name": "Proxmity Valley",
+  "Author": "Suhri",
+  "Version": "0.0.1",
+  "Description": "It's a simple ingame proximity chat with a dedicated Server for the voice chat that will need to be hosted.",
+  "UniqueID": "suhri.proximityvalley",
+  "EntryDll": "Proximity Valley.dll",
+  "MinimumApiVersion": "4.0.0",
+  "UpdateKeys": [],
+  "Dependencies": [
+    {
+      "UniqueID": "spacechase0.GenericModConfigMenu",
+      "IsRequired": false
+    }
+  ]
+}

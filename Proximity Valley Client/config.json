@@ -1,0 +1,14 @@
+// config.json (Beispiel im Mod-Ordner und im Server-Arbeitsverzeichnis)
+{
+  "ServerAddress": "127.0.0.1",
+  "ServerPort": 5000,
+  "LocalPort": 6000,
+  "SampleRate": 8000,
+  "Bits": 16,
+  "Channels": 1,
+  "BufferMilliseconds": 50,
+  "OutputBufferSeconds": 5,
+  "WaveInDevice": -1,
+  "WaveOutDevice": -1,
+  "ListenPort": 5000
+}

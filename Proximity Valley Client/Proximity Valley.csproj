@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<RootNamespace>Proximity_Valley</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="NAudio" Version="2.2.1" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Reference Include="GenericModConfigMenu">
+	    <HintPath>lib\GenericModConfigMenu.dll</HintPath>
+	  </Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <None Update="config.json">
+	    <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
+	<Target Name="CopyNAudioToModFolder" AfterTargets="Build">
+		<ItemGroup>
+			<NAudioDll Include="$(UserProfile)\\.nuget\\packages\\naudio\\2.2.1\\lib\\net6.0\\NAudio.dll" />
+		</ItemGroup>
+		<Copy SourceFiles="@(NAudioDll)" DestinationFolder="$(TargetDir)" />
+	</Target>
+
+
+
+</Project>
