@@ -99,8 +99,8 @@ namespace ProximityValley
         private void ProcessIncomingAudio(long playerId, byte[] audioData)
         {
             // 1) kein Self‑Audio
-            //if (playerId == modEntry.playerID)
-            //    return;
+            if (playerId == modEntry.playerID)
+                return;
 
             // 2) nur echte Daten
             if (audioData.Length == 0)
@@ -112,12 +112,6 @@ namespace ProximityValley
             {
                 // initiale Lautstärke und Pan aus der Distanzberechnung
                 (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId));
-
-                // falls der Spieler manuell einen Wert gesetzt hat, verwende den stattdessen
-                if (_customVolumes.TryGetValue(playerId, out float customVolume))
-                    volume = customVolume;
-                if (_customPans.TryGetValue(playerId, out float customPan))
-                    pan = customPan;
 
                 stream = new PlayerAudioStream(
                     new WaveFormat(Config.SampleRate, Config.Bits, 1),
@@ -154,9 +148,9 @@ namespace ProximityValley
 
                 // überschreibe mit manuell gesetzten Werten, falls vorhanden
                 float volume = _customVolumes.ContainsKey(playerId) ? _customVolumes[playerId] : baseVolume;
-                float pan = _customPans.ContainsKey(playerId) ? _customPans[playerId] : basePan;
+                //float pan = _customPans.ContainsKey(playerId) ? _customPans[playerId] : basePan;
 
-                stream.UpdatePanAndVolume(pan, volume);
+                stream.UpdatePanAndVolume(basePan, volume);
             }
         }
 

@@ -103,7 +103,7 @@ namespace ProximityValley
             int index = 0;
             foreach (var farmer in Game1.getOnlineFarmers())
             {
-                if (farmer.currentLocation != Game1.player.currentLocation)
+                if (farmer.currentLocation != Game1.player.currentLocation && !devOptionsEnabled)
                     continue;
 
                 // Positionsvergleich

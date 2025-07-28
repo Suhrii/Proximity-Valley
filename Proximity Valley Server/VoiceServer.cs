@@ -81,11 +81,12 @@ namespace ProximityValleyServer
                         List<IPEndPoint> targets;
                         lock (clientMap)
                         {
-                            targets = [ .. clientMap
+                            targets = [.. clientMap
                                 .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
-                                               && kvp.Key != sender)
-                                .Select(kvp => kvp.Key) ];
+                                                && !(kvp.Key.Address.Equals(sender.Address) && kvp.Key.Port == sender.Port))
+                                .Select(kvp => kvp.Key)];
                         }
+
 
                         if (targets.Count == 0) return;
 
