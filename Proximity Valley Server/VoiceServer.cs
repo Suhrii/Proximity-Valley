@@ -38,6 +38,9 @@ public class VoiceServer
                 var sender = result.RemoteEndPoint;
                 var data = Decrypt(result.Buffer);
 
+                using var stream = new MemoryStream(data);
+                using var reader = new BinaryReader(stream);
+
                 byte packetType = reader.ReadByte();
                 long playerId = reader.ReadInt64();
                 byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
