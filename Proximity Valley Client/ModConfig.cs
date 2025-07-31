@@ -1,6 +1,8 @@
 ﻿// ModConfig.cs
-using System;
+
 using StardewModdingAPI;
+
+namespace Proximity_Valley;
 
 public class ModConfig
 {

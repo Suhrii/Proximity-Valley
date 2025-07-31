@@ -1,11 +1,10 @@
-﻿namespace ProximityValleyServer
+﻿namespace Proximity_Valley_Server;
+
+class Program
 {
-    class Program
+    static async Task Main(string[] args)
     {
-        static async Task Main(string[] args)
-        {
-            var server = new VoiceServer();
-            await server.StartAsync();
-        }
+        var server = new VoiceServer();
+        await server.StartAsync();
     }
 }
