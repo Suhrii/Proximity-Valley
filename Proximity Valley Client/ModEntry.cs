@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using GenericModConfigMenu; // GMCM-API
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -80,7 +81,7 @@ public class ModEntry : Mod
 
     private void OnRenderedHud(object sender, RenderedHudEventArgs e)
     {
-        var b = e.SpriteBatch;
+        SpriteBatch b = e.SpriteBatch;
         // Mic Volume/Talking Indicator
 
         int height = Math.Clamp((int)(200 * voiceClient.micVolumeLevel), 0, 100);
@@ -99,7 +100,7 @@ public class ModEntry : Mod
 
         // Players Indicator
         int index = 0;
-        foreach (var farmer in Game1.getOnlineFarmers())
+        foreach (Farmer? farmer in Game1.getOnlineFarmers())
         {
             if (farmer.currentLocation != Game1.player.currentLocation)
                 continue;
@@ -110,9 +111,9 @@ public class ModEntry : Mod
             {
                 if (farmer.currentLocation != Game1.player.currentLocation && !devOptionsEnabled)
                     continue;
-				
-                var myPos = Game1.player.Position;
-                var otherPos = farmer.Position;
+
+                Vector2 myPos = Game1.player.Position;
+                Vector2 otherPos = farmer.Position;
                 float dx = otherPos.X - myPos.X;
                 float dy = otherPos.Y - myPos.Y;
 
@@ -167,7 +168,7 @@ public class ModEntry : Mod
 
 
         // GMCM - Integration
-        var gmcm = Helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
+        IGenericModConfigMenuApi? gmcm = Helper.ModRegistry.GetApi<IGenericModConfigMenuApi>("spacechase0.GenericModConfigMenu");
         if (gmcm != null)
         {
             gmcm.Register(

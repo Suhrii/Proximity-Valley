@@ -10,20 +10,20 @@ namespace Proximity_Valley_Server;
 
 public class VoiceServer
 {
-    private readonly UdpClient udpServer;
-    private readonly Dictionary<IPEndPoint, string> clientMap = [];
-    private readonly ServerConfig config;
+    private readonly UdpClient _udpServer;
+    private readonly Dictionary<IPEndPoint, string> _clientMap = [];
+    private readonly ServerConfig _config;
 
     public VoiceServer()
     {
         string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
         if (File.Exists(path))
-            config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path)) ?? new ServerConfig();
+            _config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path)) ?? new ServerConfig();
         else
-            config = new ServerConfig();
+            _config = new ServerConfig();
 
-        udpServer = new UdpClient(config.ListenPort);
-        Console.WriteLine($"{DateTime.Now}: [Server] UDP voice server started on port {config.ListenPort}");
+        _udpServer = new UdpClient(_config.ListenPort);
+        Console.WriteLine($"{DateTime.Now}: [Server] UDP voice server started on port {_config.ListenPort}");
     }
 
     public async Task StartAsync()
@@ -34,12 +34,12 @@ public class VoiceServer
         {
             try
             {
-                var result = await udpServer.ReceiveAsync();
-                var sender = result.RemoteEndPoint;
-                var data = Decrypt(result.Buffer);
+                UdpReceiveResult result = await _udpServer.ReceiveAsync();
+                IPEndPoint sender = result.RemoteEndPoint;
+                byte[] data = Decrypt(result.Buffer);
 
-                using var stream = new MemoryStream(data);
-                using var reader = new BinaryReader(stream);
+                using MemoryStream stream = new(data);
+                using BinaryReader reader = new(stream);
 
                 byte packetType = reader.ReadByte();
                 long playerId = reader.ReadInt64();
@@ -48,35 +48,34 @@ public class VoiceServer
                 switch (packetType)
                 {
                     case (byte)PacketType.Audio:
-                        if (!clientMap.TryGetValue(sender, out string? senderMap))
+                        if (!_clientMap.TryGetValue(sender, out string? senderMap))
                             return;
 
                         List<IPEndPoint> targets;
-                        lock (clientMap)
+                        lock (_clientMap)
                         {
-                            targets = [.. clientMap
+                            targets = [.. _clientMap
                                 .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
                                                 && !(kvp.Key.Address.Equals(sender.Address) && kvp.Key.Port == sender.Port))
                                 .Select(kvp => kvp.Key)];
                         }
 
-
                         if (targets.Count == 0) return;
 
-                        using (var forwardStream = new MemoryStream())
+                        using (MemoryStream forwardStream = new())
                         {
-                            using var writer = new BinaryWriter(forwardStream);
+                            await using BinaryWriter writer = new(forwardStream);
                             writer.Write(packetType);
                             writer.Write(playerId);
                             writer.Write(payload);
 
                             byte[] forwardData = Encrypt(forwardStream.ToArray());
 
-                            foreach (var target in targets)
+                            foreach (IPEndPoint target in targets)
                             {
                                 try
                                 {
-                                    await udpServer.SendAsync(forwardData, forwardData.Length, target);
+                                    await _udpServer.SendAsync(forwardData, forwardData.Length, target);
                                 }
                                 catch (Exception sendEx)
                                 {
@@ -88,20 +87,20 @@ public class VoiceServer
 
                     case (byte)PacketType.Location:
                         string mapName = Encoding.UTF8.GetString(payload);
-                        lock (clientMap)
-                            clientMap[sender] = mapName;
+                        lock (_clientMap)
+                            _clientMap[sender] = mapName;
                         Console.WriteLine($"{DateTime.Now}: [Server] Updated map of {sender} ({playerId}) to '{mapName}'");
                         break;
 
                     case (byte)PacketType.Connect:
-                        lock (clientMap)
-                            clientMap[sender] = "World";
+                        lock (_clientMap)
+                            _clientMap[sender] = "World";
                         Console.WriteLine($"{DateTime.Now}: [Server] Connected {sender} ({playerId})");
                         break;
 
                     case (byte)PacketType.Disconnect:
-                        lock (clientMap)
-                            clientMap.Remove(sender);
+                        lock (_clientMap)
+                            _clientMap.Remove(sender);
                         Console.WriteLine($"{DateTime.Now}: [Server] Disconnected {sender} ({playerId})");
                         break;
 
@@ -109,7 +108,7 @@ public class VoiceServer
                         Console.WriteLine($"{DateTime.Now}: [Server] Unknown packet type: {packetType}");
                         break;
                 }
-				
+
                 _ = Task.Run(() => HandlePackages(data, sender));
             }
             catch (Exception ex)
@@ -123,8 +122,8 @@ public class VoiceServer
     {
         try
         {
-            using var stream = new MemoryStream(data);
-            using var reader = new BinaryReader(stream);
+            using MemoryStream stream = new(data);
+            using BinaryReader reader = new(stream);
 
             byte packetType = reader.ReadByte();
             long playerId = reader.ReadInt64();
@@ -133,34 +132,33 @@ public class VoiceServer
             switch (packetType)
             {
                 case (byte)PacketType.Audio:
-                    if (!clientMap.TryGetValue(sender, out string? senderMap))
+                    if (!_clientMap.TryGetValue(sender, out string? senderMap))
                         return;
 
                     List<IPEndPoint> targets;
-                    lock (clientMap)
+                    lock (_clientMap)
                     {
-                        targets = [ .. clientMap
-                                       .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
-                                                     && kvp.Key != sender)
+                        targets = [ .. _clientMap
+                                       .Where(kvp => (kvp.Value == senderMap || senderMap == "World") && !Equals(kvp.Key, sender))
                                        .Select(kvp => kvp.Key) ];
                     }
 
                     if (targets.Count == 0) return;
 
-                    using (var forwardStream = new MemoryStream())
+                    using (MemoryStream forwardStream = new())
                     {
-                        using var writer = new BinaryWriter(forwardStream);
+                        await using BinaryWriter writer = new(forwardStream);
                         writer.Write(packetType);
                         writer.Write(playerId);
                         writer.Write(payload);
 
                         byte[] forwardData = Encrypt(forwardStream.ToArray());
 
-                        foreach (var target in targets)
+                        foreach (IPEndPoint target in targets)
                         {
                             try
                             {
-                                await udpServer.SendAsync(forwardData, forwardData.Length, target);
+                                await _udpServer.SendAsync(forwardData, forwardData.Length, target);
                             }
                             catch (Exception sendEx)
                             {
@@ -172,20 +170,20 @@ public class VoiceServer
 
                 case (byte)PacketType.Location:
                     string mapName = Encoding.UTF8.GetString(payload);
-                    lock (clientMap)
-                        clientMap[sender] = mapName;
+                    lock (_clientMap)
+                        _clientMap[sender] = mapName;
                     Console.WriteLine($"{DateTime.Now}: [Server] Updated map of {sender} ({playerId}) to '{mapName}'");
                     break;
 
                 case (byte)PacketType.Connect:
-                    lock (clientMap)
-                        clientMap[sender] = "World";
+                    lock (_clientMap)
+                        _clientMap[sender] = "World";
                     Console.WriteLine($"{DateTime.Now}: [Server] Connected {sender} ({playerId})");
                     break;
 
                 case (byte)PacketType.Disconnect:
-                    lock (clientMap)
-                        clientMap.Remove(sender);
+                    lock (_clientMap)
+                        _clientMap.Remove(sender);
                     Console.WriteLine($"{DateTime.Now}: [Server] Disconnected {sender} ({playerId})");
                     break;
 
@@ -202,16 +200,16 @@ public class VoiceServer
 
     public void Stop()
     {
-        udpServer.Close();
+        _udpServer.Close();
         Console.WriteLine($"{DateTime.Now}: [Server] UDP server stopped.");
     }
 
     /* ---------- AES helpers ---------- */
     private Aes CreateAes()
     {
-        var aes = Aes.Create();
-        aes.Key = Encoding.UTF8.GetBytes(config.EncryptionKey);
-        aes.IV = Encoding.UTF8.GetBytes(config.EncryptionIV);
+        Aes aes = Aes.Create();
+        aes.Key = Encoding.UTF8.GetBytes(_config.EncryptionKey);
+        aes.IV = Encoding.UTF8.GetBytes(_config.EncryptionIV);
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
         return aes;
@@ -219,15 +217,15 @@ public class VoiceServer
 
     private byte[] Encrypt(byte[] data)
     {
-        using var aes = CreateAes();
-        using var enc = aes.CreateEncryptor();
+        using Aes aes = CreateAes();
+        using ICryptoTransform enc = aes.CreateEncryptor();
         return enc.TransformFinalBlock(data, 0, data.Length);
     }
 
     private byte[] Decrypt(byte[] data)
     {
-        using var aes = CreateAes();
-        using var dec = aes.CreateDecryptor();
+        using Aes aes = CreateAes();
+        using ICryptoTransform dec = aes.CreateDecryptor();
         return dec.TransformFinalBlock(data, 0, data.Length);
     }
 }

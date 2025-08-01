@@ -25,14 +25,14 @@ public class VoiceClient
     private DateTime lastVoiceDetected = DateTime.MinValue;
 
     // enthält für jeden anderen Spieler den aktuellen Audio‑Stream
-    private readonly Dictionary<long, PlayerAudioStream> _streams = new Dictionary<long, PlayerAudioStream>();
+    private readonly Dictionary<long, PlayerAudioStream> _streams = new();
 
     // enthält für jeden Spieler eine manuell einstellbare Lautstärke (0.0–1.0)
     // Du kannst das später per In‑Game‑Menü befüllen
-    private readonly Dictionary<long, float> _customVolumes = new Dictionary<long, float>();
+    private readonly Dictionary<long, float> _customVolumes = new();
 
     // enthält für jeden Spieler einen manuell einstellbaren Pan‑Wert (‑1.0 links bis +1.0 rechts)
-    private readonly Dictionary<long, float> _customPans = new Dictionary<long, float>();
+    private readonly Dictionary<long, float> _customPans = new();
 
 	public enum PacketType : byte
 	{
@@ -69,11 +69,11 @@ public class VoiceClient
             Monitor.Log("[Voice] Waiting for audio packets...", LogLevel.Debug);
             while (true)
             {
-                var result = await udpClient.ReceiveAsync();
+                UdpReceiveResult result = await udpClient.ReceiveAsync();
 
                 byte[] decrypted = Decrypt(result.Buffer);
-                using var stream = new MemoryStream(decrypted);
-                using var reader = new BinaryReader(stream);
+                using MemoryStream stream = new(decrypted);
+                using BinaryReader reader = new(stream);
 
                 byte pType = reader.ReadByte();
                 long playerId = reader.ReadInt64();
@@ -139,7 +139,7 @@ public class VoiceClient
         if (!Context.IsWorldReady)
             return;
 
-        foreach (var kvp in _streams.ToList())  // ToList, damit wir nicht währenddessen ändern
+        foreach (KeyValuePair<long, PlayerAudioStream> kvp in _streams.ToList())  // ToList, damit wir nicht währenddessen ändern
         {
             long playerId = kvp.Key;
             PlayerAudioStream stream = kvp.Value;
@@ -195,7 +195,7 @@ public class VoiceClient
 
     private void SetupOutput()
     {
-        var format = new WaveFormat(Config.SampleRate, Config.Bits, Config.Channels);
+        WaveFormat format = new(Config.SampleRate, Config.Bits, Config.Channels);
 
         waveProvider = new BufferedWaveProvider(format)
         {
@@ -203,7 +203,7 @@ public class VoiceClient
             BufferLength = format.AverageBytesPerSecond * Config.OutputBufferSeconds
         };
 
-        var volumeProvider = new VolumeWaveProvider16(waveProvider)
+        VolumeWaveProvider16 volumeProvider = new(waveProvider)
         {
             Volume = Config.OutputVolume
         };
@@ -243,8 +243,8 @@ public class VoiceClient
     {
         try
         {
-            using var stream = new MemoryStream();
-            using var writer = new BinaryWriter(stream);
+            using MemoryStream stream = new();
+            using BinaryWriter writer = new(stream);
 
             writer.Write((byte)packetType);
             writer.Write(playerId);
@@ -315,7 +315,7 @@ public class VoiceClient
 
     private Aes CreateAes()
     {
-        var aes = Aes.Create();
+        Aes aes = Aes.Create();
         aes.Key = Encoding.UTF8.GetBytes(Config.EncryptionKey);
         aes.IV = Encoding.UTF8.GetBytes(Config.EncryptionIV);
         aes.Mode = CipherMode.CBC;
@@ -325,15 +325,15 @@ public class VoiceClient
 
     private byte[] Encrypt(byte[] data)
     {
-        using var aes = CreateAes();
-        using var enc = aes.CreateEncryptor();
+        using Aes aes = CreateAes();
+        using ICryptoTransform enc = aes.CreateEncryptor();
         return enc.TransformFinalBlock(data, 0, data.Length);
     }
 
     private byte[] Decrypt(byte[] data)
     {
-        using var aes = CreateAes();
-        using var dec = aes.CreateDecryptor();
+        using Aes aes = CreateAes();
+        using ICryptoTransform dec = aes.CreateDecryptor();
         return dec.TransformFinalBlock(data, 0, data.Length);
     }
 

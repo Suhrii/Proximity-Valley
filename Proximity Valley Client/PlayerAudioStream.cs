@@ -18,7 +18,7 @@ public class PlayerAudioStream
             BufferLength = format.AverageBytesPerSecond * bufferSeconds
         };
 
-        var sample = Buffer.ToSampleProvider();
+        ISampleProvider? sample = Buffer.ToSampleProvider();
         PanningProvider = new PanningSampleProvider(sample) { Pan = initialPan };
         VolumeProvider = new VolumeSampleProvider(PanningProvider) { Volume = initialVolume };
 

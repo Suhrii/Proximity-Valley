@@ -4,7 +4,7 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        var server = new VoiceServer();
+        VoiceServer server = new();
         await server.StartAsync();
     }
 }
