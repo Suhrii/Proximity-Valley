@@ -1,11 +1,13 @@
-﻿using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics.PackedVector;
 using NAudio.Wave;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using System;
+using System.Net.Sockets;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Proximity_Valley;
 
@@ -13,7 +15,7 @@ public class VoiceClient
 {
     private readonly IMonitor Monitor;
     private readonly IModHelper Helper;
-    private readonly ModConfig Config;
+    private volatile ModConfig Config;
 
     internal ModEntry modEntry = null!; // wird extern gesetzt
 
@@ -25,14 +27,7 @@ public class VoiceClient
     private DateTime lastVoiceDetected = DateTime.MinValue;
 
     // enthält für jeden anderen Spieler den aktuellen Audio‑Stream
-    private readonly Dictionary<long, PlayerAudioStream> _streams = new();
-
-    // enthält für jeden Spieler eine manuell einstellbare Lautstärke (0.0–1.0)
-    // Du kannst das später per In‑Game‑Menü befüllen
-    private readonly Dictionary<long, float> _customVolumes = new();
-
-    // enthält für jeden Spieler einen manuell einstellbaren Pan‑Wert (‑1.0 links bis +1.0 rechts)
-    private readonly Dictionary<long, float> _customPans = new();
+    private readonly Dictionary<long, PlayerAudioStream> playerAudioStreams = new();
 
 	public enum PacketType : byte
 	{
@@ -80,7 +75,7 @@ public class VoiceClient
                 byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
                 if (pType == (byte)PacketType.Audio)
-                    ProcessIncomingAudio(playerId, payload);
+                    _ = Task.Run(() => ProcessIncomingAudio(playerId, payload));
                 else
                     Monitor.Log($"[Voice] Unknown packet type: {pType}", LogLevel.Trace);
             }
@@ -94,8 +89,9 @@ public class VoiceClient
     private void ProcessIncomingAudio(long playerId, byte[] audioData)
     {
         // 1) kein Self‑Audio
-        //if (playerId == modEntry.playerID)
-        //    return;
+        if (playerId == modEntry.playerID)
+            if (!Config.HearSelf)
+                return;
 
         // 2) nur echte Daten
         if (audioData.Length == 0)
@@ -103,33 +99,23 @@ public class VoiceClient
 
 
         // hol (oder erstelle) den Stream für diesen Spieler
-        if (!_streams.TryGetValue(playerId, out PlayerAudioStream stream))
+        if (!playerAudioStreams.TryGetValue(playerId, out PlayerAudioStream stream))
         {
             // initiale Lautstärke und Pan aus der Distanzberechnung
             (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId));
 
-            // falls der Spieler manuell einen Wert gesetzt hat, verwende den stattdessen
-            if (_customVolumes.TryGetValue(playerId, out float customVolume))
-                volume = customVolume;
-            if (_customPans.TryGetValue(playerId, out float customPan))
-                pan = customPan;
-
             stream = new PlayerAudioStream(
-                new WaveFormat(Config.SampleRate, Config.Bits, 1),
+                new WaveFormat(Config.SampleRate, Config.Bits, Config.Channels),
                 Config.OutputBufferSeconds,
                 Config.WaveOutDevice,
                 volume,
                 pan
             );
-            _streams[playerId] = stream;
+            playerAudioStreams[playerId] = stream;
         }
 
         // füge die neuen Samples hinzu
         stream.AddSamples(audioData, 0, audioData.Length);
-
-        //waveProvider.AddSamples(audioData, 0, audioData.Length);
-        //if (waveOut.PlaybackState != PlaybackState.Playing)
-        //    waveOut.Play();
 
         Monitor.Log($"[Voice] Received {audioData.Length} bytes from {playerId}", LogLevel.Trace);
     }
@@ -139,17 +125,13 @@ public class VoiceClient
         if (!Context.IsWorldReady)
             return;
 
-        foreach (KeyValuePair<long, PlayerAudioStream> kvp in _streams.ToList())  // ToList, damit wir nicht währenddessen ändern
+        foreach (KeyValuePair<long, PlayerAudioStream> kvp in playerAudioStreams.ToList())  // ToList, damit wir nicht währenddessen ändern
         {
             long playerId = kvp.Key;
             PlayerAudioStream stream = kvp.Value;
 
             // Basiswerte aus Entfernung/Direktion
-            (float baseVolume, float basePan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId) ?? Game1.player);
-
-            // überschreibe mit manuell gesetzten Werten, falls vorhanden
-            float volume = _customVolumes.ContainsKey(playerId) ? _customVolumes[playerId] : baseVolume;
-            float pan = _customPans.ContainsKey(playerId) ? _customPans[playerId] : basePan;
+            (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId) ?? Game1.player);
 
             stream.UpdatePanAndVolume(pan, volume);
         }
@@ -174,9 +156,11 @@ public class VoiceClient
                 // wenn PushToTalk aktiviert ist, dann nur senden, wenn Taste gedrückt
                 if (Config.PushToTalk && !modEntry.isPushToTalking) return;
 
-                OnDataAvailable(s, e);
+                byte[] buffer = BoostAudio(e.Buffer, e.BytesRecorded);
 
-                if (!ShouldSendAudio(e.Buffer)) return;
+                CalculateMicVolume(buffer, e.BytesRecorded);
+
+                if (!ShouldSendAudio(buffer)) return;
 
                 // **roh**es PCM senden – wird in SendPacket verschlüsselt
                 byte[] audioPayload = e.Buffer.Take(e.BytesRecorded).ToArray();
@@ -191,6 +175,34 @@ public class VoiceClient
 
         waveIn.StartRecording();
         Monitor.Log("[Voice] Microphone input started", LogLevel.Debug);
+    }
+
+    private byte[] BoostAudio(byte[] buffer, int bytes)
+    {
+        // Boost direkt am Mikrofon
+        for (int i = 0; i < bytes; i += 2)
+        {
+            short sample = BitConverter.ToInt16(buffer, i);
+            sample = (short)Math.Clamp(sample * Config.InputVolume, short.MinValue, short.MaxValue);
+            byte[] boosted = BitConverter.GetBytes(sample);
+            buffer[i] = boosted[0];
+            buffer[i + 1] = boosted[1];
+        }
+
+        return buffer;
+    }
+
+    internal float micVolumeLevel = 0;
+    private void CalculateMicVolume (byte[] buffer, int bytes)
+    {
+        short[] sampleBuffer = new short[bytes / 2];
+        Buffer.BlockCopy(buffer, 0, sampleBuffer, 0, bytes);
+
+        double sumSquares = 0;
+        foreach (short sample in sampleBuffer)
+            sumSquares += sample * sample;
+
+        micVolumeLevel = (float)Math.Sqrt(sumSquares / sampleBuffer.Length) / short.MaxValue;
     }
 
     private void SetupOutput()
@@ -224,19 +236,6 @@ public class VoiceClient
         waveOut?.Dispose();
         udpClient?.Close();
         Monitor.Log("[Voice] Client stopped", LogLevel.Debug);
-    }
-
-    internal float micVolumeLevel = 0;
-    private void OnDataAvailable(object? sender, WaveInEventArgs e)
-    {
-        short[] sampleBuffer = new short[e.BytesRecorded / 2];
-        Buffer.BlockCopy(e.Buffer, 0, sampleBuffer, 0, e.BytesRecorded);
-
-        double sumSquares = 0;
-        foreach (short sample in sampleBuffer)
-            sumSquares += sample * sample;
-
-        micVolumeLevel = (float)Math.Sqrt(sumSquares / sampleBuffer.Length) / short.MaxValue;
     }
 
     public void SendPacket(PacketType packetType, long playerId, byte[] payload)

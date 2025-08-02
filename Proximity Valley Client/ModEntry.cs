@@ -192,7 +192,7 @@ public class ModEntry : Mod
                         arrow = "^";
                 }
 
-                if (dx + dy < Game1.tileSize)
+                if (Math.Abs(dx) + Math.Abs(dy) < Game1.tileSize)
                     arrow = "$";
             }
 
@@ -381,6 +381,14 @@ public class ModEntry : Mod
                 tooltip: () => "Taste zum Stummschalten/Entstummen",
                 getValue: () => Config.ToggleMute,
                 setValue: value => Config.ToggleMute = value
+            );
+
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Hear Self",
+                tooltip: () => "Höre das eigene Mikrofon",
+                getValue: () => Config.HearSelf,
+                setValue: value => Config.HearSelf = value
             );
 
             gmcm.AddNumberOption(

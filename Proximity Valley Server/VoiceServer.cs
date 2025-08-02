@@ -56,7 +56,7 @@ public class VoiceServer
                         {
                             targets = [.. _clientMap
                                 .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
-                                                && !(kvp.Key.Address.Equals(sender.Address) && kvp.Key.Port == sender.Port))
+                                                && !kvp.Key.Equals(sender.Address))
                                 .Select(kvp => kvp.Key)];
                         }
 

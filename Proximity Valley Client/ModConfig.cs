@@ -24,6 +24,7 @@ public class ModConfig
     public int HangTimeMilliseconds { get; set; } = 250;
     public int OutputVolume{ get; set; } = 1;
     public bool PushToTalk { get; set; } = false;
+    public bool HearSelf { get; set; } = false;
 
     // Geräte
     public int WaveInDevice { get; set; } = 0;
