@@ -1,4 +1,4 @@
-﻿using System.Text;
+﻿using DiscordRPC;
 using GenericModConfigMenu; // GMCM-API
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -6,12 +6,16 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using StardewValley.Network;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Proximity_Valley;
 
 public class ModEntry : Mod
 {
     private VoiceClient voiceClient;
+    DiscordRpcClient discordRpcClient;
     private ModConfig Config;
 
     private string currentMap = "World";
@@ -42,8 +46,64 @@ public class ModEntry : Mod
         helper.Events.Input.ButtonPressed += Input_ButtonPressed;
         helper.Events.Input.ButtonReleased += Input_ButtonReleased;
         helper.Events.GameLoop.UpdateTicked += voiceClient.OnUpdateTicked;
+        helper.Events.GameLoop.DayStarted += GameLoop_DayStarted;
+
+
+        discordRpcClient = new DiscordRpcClient("1401173401498030210", autoEvents: true);
+        discordRpcClient.Initialize();
+
+        discordRpcClient.SetPresence(new RichPresence()
+        {
+            //Details = "Level Games Launcher",
+            State = "Main Menu",
+            Assets = new Assets()
+            {
+                LargeImageKey = "stardew_logo",
+                //LargeImageText = "",
+                //SmallImageKey = "stardew_logo",
+                //SmallImageText = ""
+            },
+            Timestamps = new Timestamps()
+            {
+                Start = DateTime.UtcNow
+            }
+        });
     }
 
+    private void GameLoop_DayStarted(object? sender, DayStartedEventArgs e)
+    {
+        UpdateDiscordRichPresence();
+    }
+
+    private void UpdateDiscordRichPresence ()
+    {
+        discordRpcClient.UpdateState(Regex.Replace(Game1.player.currentLocation.Name, @"(\B[A-Z])", " $1"));
+        discordRpcClient.UpdateDetails($"{Game1.season}, Day {Game1.dayOfMonth} - Year {Game1.year}");
+        discordRpcClient.UpdateLargeAsset("stardew_logo",
+            $"Farming: {Game1.player.FarmingLevel}\r\n" +
+            $"Mining: {Game1.player.MiningLevel}\r\n" +
+            $"Foraging: {Game1.player.ForagingLevel}\r\n" +
+            $"Fishing: {Game1.player.FishingLevel}\r\n" +
+            $"Combat: {Game1.player.CombatLevel}");
+        switch (Game1.season)
+        {
+            case Season.Spring:
+                discordRpcClient.UpdateSmallAsset("stardew_season_spring");
+                break;
+            case Season.Summer:
+                discordRpcClient.UpdateSmallAsset("stardew_season_summer");
+                break;
+            case Season.Fall:
+                discordRpcClient.UpdateSmallAsset("stardew_season_autumn");
+                break;
+            case Season.Winter:
+                discordRpcClient.UpdateSmallAsset("stardew_season_winter");
+                break;
+            default:
+                discordRpcClient.UpdateSmallAsset("stardew_logo");
+                break;
+        }
+    }
 
     private void Input_ButtonReleased(object? sender, ButtonReleasedEventArgs e)
     {
@@ -345,6 +405,7 @@ public class ModEntry : Mod
                 e.NewLocation.Name.Contains("Mine") ? "Mine" :
                 e.NewLocation.Name;
             currentMap = map;
+            UpdateDiscordRichPresence();
             voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(map));
         }
     }
