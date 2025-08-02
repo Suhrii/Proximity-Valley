@@ -10,6 +10,8 @@ public class PlayerAudioStream
     public PanningSampleProvider PanningProvider { get; }
     public WaveOutEvent Output { get; }
 
+    public float userVolume = 1f;
+
     public PlayerAudioStream(WaveFormat format, int bufferSeconds, int device, float initialVolume, float initialPan)
     {
         Buffer = new BufferedWaveProvider(format)
@@ -35,7 +37,7 @@ public class PlayerAudioStream
     public void UpdatePanAndVolume(float pan, float volume)
     {
         PanningProvider.Pan = pan;
-        VolumeProvider.Volume = volume;
+        VolumeProvider.Volume = volume * userVolume;
     }
 
     public void Dispose()

@@ -27,7 +27,7 @@ public class VoiceClient
     private DateTime lastVoiceDetected = DateTime.MinValue;
 
     // enthält für jeden anderen Spieler den aktuellen Audio‑Stream
-    private readonly Dictionary<long, PlayerAudioStream> playerAudioStreams = new();
+    internal readonly Dictionary<long, PlayerAudioStream> playerAudioStreams = new();
 
 	public enum PacketType : byte
 	{

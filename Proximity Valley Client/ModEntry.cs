@@ -2,6 +2,7 @@
 using GenericModConfigMenu; // GMCM-API
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -46,6 +47,7 @@ public class ModEntry : Mod
         helper.Events.Input.ButtonPressed += Input_ButtonPressed;
         helper.Events.Input.ButtonReleased += Input_ButtonReleased;
         helper.Events.GameLoop.UpdateTicked += voiceClient.OnUpdateTicked;
+        helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         helper.Events.GameLoop.DayStarted += GameLoop_DayStarted;
 
 
@@ -201,10 +203,70 @@ public class ModEntry : Mod
 
             SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50), drawBGScroll: 0);
 
+
+            #region Per Player Volume Slider 
+
+            int sliderX = 400;
+            int sliderY = b.GraphicsDevice.Viewport.Height - 190 - (index * 50);
+            int sliderWidth = 100;
+            int sliderHeight = 10;
+
+            // Volume holen oder Default setzen
+            if (!voiceClient.playerAudioStreams.TryGetValue(farmer.UniqueMultiplayerID, out PlayerAudioStream stream))
+                continue;
+
+            Color barColor = Color.SkyBlue;
+            Color handleColor = Color.White;
+
+            // Hintergrund des Sliders
+            b.Draw(Game1.staminaRect, new Rectangle(sliderX, sliderY, sliderWidth, sliderHeight), Color.Gray);
+            // Gefüllter Bereich
+            b.Draw(Game1.staminaRect, new Rectangle(sliderX, sliderY, (int)(sliderWidth * stream.VolumeProvider.Volume), sliderHeight), barColor);
+            // "Griff" zeichnen
+            b.Draw(Game1.staminaRect, new Rectangle(sliderX + (int)(sliderWidth * stream.VolumeProvider.Volume) - 2, sliderY - 2, 4, sliderHeight + 4), handleColor);
+
+            #endregion
+
+
             index++;
         }
 
     }
+
+    public void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
+    {
+        if (!Context.IsWorldReady || !Game1.game1.IsActive)
+            return;
+
+        if (Mouse.GetState().LeftButton == ButtonState.Pressed)
+        {
+            int mouseX = Game1.getMouseX();
+            int mouseY = Game1.getMouseY();
+
+            int i = 0;
+            foreach (var farmer in Game1.getOnlineFarmers())
+            {
+                if (farmer.currentLocation != Game1.player.currentLocation)
+                    continue;
+
+                int sliderX = 400;
+                int sliderY = Game1.viewport.Height - 190 - (i * 50);
+                int sliderWidth = 100;
+                int sliderHeight = 10;
+
+                Rectangle sliderRect = new Rectangle(sliderX, sliderY, sliderWidth, sliderHeight);
+                if (sliderRect.Contains(mouseX, mouseY))
+                {
+                    float newVolume = Math.Clamp((mouseX - sliderX) / (float)sliderWidth, 0f, 1f);
+                    voiceClient.playerAudioStreams[farmer.UniqueMultiplayerID].VolumeProvider.Volume = newVolume;
+                    break;
+                }
+
+                i++;
+            }
+        }
+    }
+
 
 
     private void OnGameLaunched(object sender, EventArgs e)
