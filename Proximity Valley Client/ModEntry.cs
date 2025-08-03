@@ -7,6 +7,7 @@ using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
+using StardewValley.Menus;
 using StardewValley.Network;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -17,7 +18,7 @@ public class ModEntry : Mod
 {
     private VoiceClient voiceClient;
     DiscordRpcClient discordRpcClient;
-    private ModConfig Config;
+    internal ModConfig Config;
 
     private string currentMap = "World";
     private bool isWalkieTalkie = false;
@@ -36,7 +37,7 @@ public class ModEntry : Mod
         Monitor.Log($"[Voice] Boot", LogLevel.Debug);
         Config = helper.ReadConfig<ModConfig>();
 
-        voiceClient = new VoiceClient(Monitor, helper);
+        voiceClient = new(Monitor);
         voiceClient.modEntry = this; // Set the mod entry reference in the voice client
         voiceClient.Start();
 
@@ -49,6 +50,8 @@ public class ModEntry : Mod
         helper.Events.GameLoop.UpdateTicked += voiceClient.OnUpdateTicked;
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         helper.Events.GameLoop.DayStarted += GameLoop_DayStarted;
+
+        helper.Events.Display.RenderedActiveMenu += OnRenderedActiveMenu;
 
 
         discordRpcClient = new DiscordRpcClient("1401173401498030210", autoEvents: true);
@@ -72,12 +75,86 @@ public class ModEntry : Mod
         });
     }
 
+
+
+    private static readonly int[] LevelXpRequirements = new int[]
+    {
+        0,      // Level 0
+        100,    // Level 1
+        380,    // Level 2
+        770,    // Level 3
+        1300,   // Level 4
+        2150,   // Level 5
+        3300,   // Level 6
+        4800,   // Level 7
+        6900,   // Level 8
+        10000,  // Level 9
+        15000   // Level 10
+    };
+
+    private int GetXpRequiredForLevel(int level)
+    {
+        if (level <= 0) return 0;
+        if (level >= LevelXpRequirements.Length) return LevelXpRequirements[^1];
+        return LevelXpRequirements[level];
+    }
+
+
+    private void OnRenderedActiveMenu(object? sender, RenderedActiveMenuEventArgs e)
+    {
+        if (Config.ShowSkillXP)
+            ShowSkillsXP(e);
+        if (Config.ShowRealtionshipPoints)
+            ShowRelationshipProgress();
+    }
+
+    private void ShowRelationshipProgress ()
+    {
+        if (Game1.activeClickableMenu is not GameMenu menu)
+            return;
+
+        if (menu.pages[menu.currentTab] is not SocialPage socialPage)
+            return;
+
+        SpriteBatch b = Game1.spriteBatch;
+        Farmer player = Game1.player;
+
+        for (int i = 0; i < socialPage.SocialEntries.Count; i++)
+        {
+            if (socialPage.SocialEntries[i].Friendship == null) continue;
+            string tooltip = $"{socialPage.SocialEntries[i].Friendship.Points} / {(socialPage.SocialEntries[i].HeartLevel + 1) * 250}";
+            b.DrawString(Game1.smallFont, tooltip, new Vector2(socialPage.characterSlots[i].bounds.X + socialPage.characterSlots[i].bounds.Width / 3, socialPage.characterSlots[i].bounds.Y + 10), Color.Black);
+        }
+    }
+
+    private void ShowSkillsXP (RenderedActiveMenuEventArgs e)
+    {
+        if (Game1.activeClickableMenu is not GameMenu menu)
+            return;
+
+        if (menu.pages[menu.currentTab] is not SkillsPage skillsPage)
+            return;
+
+        SpriteBatch b = e.SpriteBatch;
+        Farmer player = Game1.player;
+
+        for (int i = 0; i < skillsPage.skillAreas.Count; i++)
+        {
+            int xp = player.experiencePoints[i];
+            int level = player.GetSkillLevel(i);
+            int xpForNext = GetXpRequiredForLevel(level + 1);
+            string tooltip = $"XP: {xp} / {xpForNext}";
+
+            b.DrawString(Game1.smallFont, tooltip, new Vector2(skillsPage.skillAreas[i].bounds.X, skillsPage.skillAreas[i].bounds.Y + skillsPage.skillAreas[i].bounds.Height), Color.Black);
+        }
+    }
+
     private void GameLoop_DayStarted(object? sender, DayStartedEventArgs e)
     {
         UpdateDiscordRichPresence();
     }
 
-    private void UpdateDiscordRichPresence ()
+    private void UpdateDiscordRichPresence()
     {
         discordRpcClient.UpdateState(Regex.Replace(Game1.player.currentLocation.Name, @"(\B[A-Z])", " $1"));
         discordRpcClient.UpdateDetails($"{Game1.season}, Day {Game1.dayOfMonth} - Year {Game1.year}");
@@ -164,16 +241,13 @@ public class ModEntry : Mod
         int index = 0;
         foreach (Farmer? farmer in Game1.getOnlineFarmers())
         {
-            if (farmer.currentLocation != Game1.player.currentLocation)
+            if (farmer.currentLocation != Game1.player.currentLocation && !devOptionsEnabled)
                 continue;
 
             // Positionsvergleich
             string arrow = "";
             if (farmer != Game1.player)
             {
-                if (farmer.currentLocation != Game1.player.currentLocation && !devOptionsEnabled)
-                    continue;
-
                 Vector2 myPos = Game1.player.Position;
                 Vector2 otherPos = farmer.Position;
                 float dx = otherPos.X - myPos.X;
@@ -202,6 +276,15 @@ public class ModEntry : Mod
             string devExtraSuffix = devOptionsEnabled ? $" - {farmer.currentLocation.Name}" : "";
 
             SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50), drawBGScroll: 0);
+
+
+            if (Config.ShowPlayerNames)
+            {
+                Vector2 worldPos = farmer.Position + new Vector2(32, -Game1.tileSize * 2.5f); // Mitte + über Kopf
+                Vector2 screenPos = Game1.GlobalToLocal(worldPos); // korrekt: überladene Methode
+
+                SpriteText.drawString(Game1.spriteBatch, farmer.displayName, (int)screenPos.X - SpriteText.getWidthOfString(farmer.displayName) / 2, (int)screenPos.Y, drawBGScroll: 1);
+            }
 
 
             #region Per Player Volume Slider 
@@ -444,6 +527,13 @@ public class ModEntry : Mod
                 getValue: () => Config.ToggleMute,
                 setValue: value => Config.ToggleMute = value
             );
+            gmcm.AddKeybind(
+                mod: this.ModManifest,
+                name: () => "Toggle Dev Options",
+                tooltip: () => "Toggle some various Dev Options on/off (mostly for debugging)",
+                getValue: () => Config.ToggleDevOptions,
+                setValue: value => Config.ToggleDevOptions = value
+            );
 
             gmcm.AddBoolOption(
                 mod: this.ModManifest,
@@ -453,14 +543,27 @@ public class ModEntry : Mod
                 setValue: value => Config.HearSelf = value
             );
 
-            gmcm.AddNumberOption(
+
+            gmcm.AddBoolOption(
                 mod: this.ModManifest,
-                name: () => "Test Panning",
-                tooltip: () => "Test-Panning für Audio (-1.0 - 1.0)",
-                getValue: () => (int)(Config.TestPanning * 100),
-                setValue: value => Config.TestPanning = value / 100f,
-                min: -100,
-                max: 100
+                name: () => "Show Player Names",
+                tooltip: () => "Show Players Name above their head",
+                getValue: () => Config.ShowPlayerNames,
+                setValue: value => Config.ShowPlayerNames = value
+            );
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Show Skill XP",
+                tooltip: () => "Show the XP in the Skill Menu",
+                getValue: () => Config.ShowSkillXP,
+                setValue: value => Config.ShowSkillXP = value
+            );
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Show Relationship Points",
+                tooltip: () => "Show the Points in the Relationship Menu",
+                getValue: () => Config.ShowRealtionshipPoints,
+                setValue: value => Config.ShowRealtionshipPoints = value
             );
         }
 

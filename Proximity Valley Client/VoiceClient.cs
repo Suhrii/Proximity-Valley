@@ -14,8 +14,6 @@ namespace Proximity_Valley;
 public class VoiceClient
 {
     private readonly IMonitor Monitor;
-    private readonly IModHelper Helper;
-    private volatile ModConfig Config;
 
     internal ModEntry modEntry = null!; // wird extern gesetzt
 
@@ -37,11 +35,9 @@ public class VoiceClient
 		Disconnect = 0x04,
 	}
 
-    public VoiceClient(IMonitor monitor, IModHelper helper)
+    public VoiceClient(IMonitor monitor)
     {
         Monitor = monitor;
-        Helper = helper;
-        Config = Helper.ReadConfig<ModConfig>();
     }
 
     public void Start() => Task.Run(Init);
@@ -51,7 +47,7 @@ public class VoiceClient
         try
         {
             Monitor.Log("[Voice] Initializing UDP socket...", LogLevel.Debug);
-            udpClient = new UdpClient(Config.LocalPort) { EnableBroadcast = false };
+            udpClient = new UdpClient(modEntry.Config.LocalPort) { EnableBroadcast = false };
 
             SetupOutput();
             SetupInput();
@@ -90,7 +86,7 @@ public class VoiceClient
     {
         // 1) kein Self‑Audio
         if (playerId == modEntry.playerID)
-            if (!Config.HearSelf)
+            if (!modEntry.Config.HearSelf)
                 return;
 
         // 2) nur echte Daten
@@ -105,9 +101,9 @@ public class VoiceClient
             (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId));
 
             stream = new PlayerAudioStream(
-                new WaveFormat(Config.SampleRate, Config.Bits, Config.Channels),
-                Config.OutputBufferSeconds,
-                Config.WaveOutDevice,
+                new WaveFormat(modEntry.Config.SampleRate, modEntry.Config.Bits, modEntry.Config.Channels),
+                modEntry.Config.OutputBufferSeconds,
+                modEntry.Config.WaveOutDevice,
                 volume,
                 pan
             );
@@ -141,9 +137,9 @@ public class VoiceClient
     {
         waveIn = new WaveInEvent
         {
-            WaveFormat = new WaveFormat(Config.SampleRate, Config.Bits, Config.Channels),
-            BufferMilliseconds = Config.BufferMilliseconds,
-            DeviceNumber = Config.WaveInDevice
+            WaveFormat = new WaveFormat(modEntry.Config.SampleRate, modEntry.Config.Bits, modEntry.Config.Channels),
+            BufferMilliseconds = modEntry.Config.BufferMilliseconds,
+            DeviceNumber = modEntry.Config.WaveInDevice
         };
 
         waveIn.DataAvailable += (s, e) =>
@@ -154,7 +150,7 @@ public class VoiceClient
                 if (modEntry.isMuted) return;
 
                 // wenn PushToTalk aktiviert ist, dann nur senden, wenn Taste gedrückt
-                if (Config.PushToTalk && !modEntry.isPushToTalking) return;
+                if (modEntry.Config.PushToTalk && !modEntry.isPushToTalking) return;
 
                 byte[] buffer = BoostAudio(e.Buffer, e.BytesRecorded);
 
@@ -183,7 +179,7 @@ public class VoiceClient
         for (int i = 0; i < bytes; i += 2)
         {
             short sample = BitConverter.ToInt16(buffer, i);
-            sample = (short)Math.Clamp(sample * Config.InputVolume, short.MinValue, short.MaxValue);
+            sample = (short)Math.Clamp(sample * modEntry.Config.InputVolume, short.MinValue, short.MaxValue);
             byte[] boosted = BitConverter.GetBytes(sample);
             buffer[i] = boosted[0];
             buffer[i + 1] = boosted[1];
@@ -207,21 +203,21 @@ public class VoiceClient
 
     private void SetupOutput()
     {
-        WaveFormat format = new(Config.SampleRate, Config.Bits, Config.Channels);
+        WaveFormat format = new(modEntry.Config.SampleRate, modEntry.Config.Bits, modEntry.Config.Channels);
 
         waveProvider = new BufferedWaveProvider(format)
         {
             DiscardOnBufferOverflow = true,
-            BufferLength = format.AverageBytesPerSecond * Config.OutputBufferSeconds
+            BufferLength = format.AverageBytesPerSecond * modEntry.Config.OutputBufferSeconds
         };
 
         VolumeWaveProvider16 volumeProvider = new(waveProvider)
         {
-            Volume = Config.OutputVolume
+            Volume = modEntry.Config.OutputVolume
         };
 
 
-        waveOut = new WaveOutEvent { DeviceNumber = Config.WaveOutDevice };
+        waveOut = new WaveOutEvent { DeviceNumber = modEntry.Config.WaveOutDevice };
         waveOut.Init(volumeProvider);
         waveOut.Play();
 
@@ -250,7 +246,7 @@ public class VoiceClient
             writer.Write(payload);
 
             byte[] fullPacket = Encrypt(stream.ToArray());
-            udpClient.Send(fullPacket, fullPacket.Length, Config.ServerAddress, Config.ServerPort);
+            udpClient.Send(fullPacket, fullPacket.Length, modEntry.Config.ServerAddress, modEntry.Config.ServerPort);
 
             Monitor.Log($"[Voice] Sent {fullPacket.Length} bytes (type={packetType})", LogLevel.Trace);
         }
@@ -266,7 +262,7 @@ public class VoiceClient
     {
         float rms = CalculateRMS(buffer);
 
-        if (rms > Config.InputThreshold)
+        if (rms > modEntry.Config.InputThreshold)
         {
             lastVoiceDetected = DateTime.UtcNow;
             return true;
@@ -315,8 +311,8 @@ public class VoiceClient
     private Aes CreateAes()
     {
         Aes aes = Aes.Create();
-        aes.Key = Encoding.UTF8.GetBytes(Config.EncryptionKey);
-        aes.IV = Encoding.UTF8.GetBytes(Config.EncryptionIV);
+        aes.Key = Encoding.UTF8.GetBytes(modEntry.Config.EncryptionKey);
+        aes.IV = Encoding.UTF8.GetBytes(modEntry.Config.EncryptionIV);
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
         return aes;
