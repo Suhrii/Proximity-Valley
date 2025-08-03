@@ -1,231 +1,239 @@
-﻿// VoiceServer.cs
-
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using Newtonsoft.Json;
 
-namespace Proximity_Valley_Server;
-
-public class VoiceServer
+namespace Proximity_Valley_Server
 {
-    private readonly UdpClient _udpServer;
-    private readonly Dictionary<IPEndPoint, string> _clientMap = [];
-    private readonly ServerConfig _config;
-
-    public VoiceServer()
+    public class VoiceServer
     {
-        string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-        if (File.Exists(path))
-            _config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path)) ?? new ServerConfig();
-        else
-            _config = new ServerConfig();
+        private readonly UdpClient _udpServer;
+        private readonly Dictionary<IPEndPoint, string> _clientMap = [];
 
-        _udpServer = new UdpClient(_config.ListenPort);
-        Console.WriteLine($"{DateTime.Now}: [Server] UDP voice server started on port {_config.ListenPort}");
-    }
+        // Statistik: Bytes pro Client
+        private readonly Dictionary<IPEndPoint, UserPackages> _bytesReceived = [];
 
-    public async Task StartAsync()
-    {
-        Console.WriteLine($"{DateTime.Now}: [Server] Voice server running...");
+        // Event-Log (Connect/Disconnect/Location) für Anzeige
+        private readonly List<string> _eventLogs = [];
+        private readonly Lock consoleLock = new();
+        private readonly string logFilePath;
 
-        while (true)
+        private readonly ServerConfig _config;
+
+        enum PacketType : byte
         {
-            try
+            Audio = 0x01,
+            Location = 0x02,
+            Connect = 0x03,
+            Disconnect = 0x04,
+        }
+
+        struct UserPackages
+        {
+            public int bytesReceived;
+            public int packagesReceived;
+        }
+
+        public VoiceServer()
+        {
+            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+            if (File.Exists(path))
+                _config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path)) ?? new ServerConfig();
+            else
+                _config = new ServerConfig();
+
+            _udpServer = new UdpClient(_config.ListenPort);
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss}: [Server] UDP voice server started on port {_config.ListenPort}");
+
+            // Log-Datei für Connect/Disconnect/Location
+            logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                DateTime.Now.ToString("yyyy-MM-dd") + ".log");
+
+            // Hintergrund-Task: Statusanzeige oben, Event-Log unten
+            _ = Task.Run(async () =>
             {
-                UdpReceiveResult result = await _udpServer.ReceiveAsync();
-                IPEndPoint sender = result.RemoteEndPoint;
-                byte[] data = Decrypt(result.Buffer);
-
-                using MemoryStream stream = new(data);
-                using BinaryReader reader = new(stream);
-
-                byte packetType = reader.ReadByte();
-                long playerId = reader.ReadInt64();
-                byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
-
-                switch (packetType)
+                while (true)
                 {
-                    case (byte)PacketType.Audio:
-                        if (!_clientMap.TryGetValue(sender, out string? senderMap))
-                            return;
-
-                        List<IPEndPoint> targets;
-                        lock (_clientMap)
+                    lock (consoleLock)
+                    {
+                        Console.Clear();
+                        Console.WriteLine("=== Connected Clients (bytes received) ===");
+                        foreach (var kvp in _bytesReceived)
                         {
-                            targets = [.. _clientMap
-                                .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
-                                                && !kvp.Key.Equals(sender.Address))
-                                .Select(kvp => kvp.Key)];
+                            Console.WriteLine($"{kvp.Key.Address}:{kvp.Key.Port} – {kvp.Value.bytesReceived / kvp.Value.packagesReceived} bytes/s");
                         }
-
-                        if (targets.Count == 0) return;
-
-                        using (MemoryStream forwardStream = new())
-                        {
-                            await using BinaryWriter writer = new(forwardStream);
-                            writer.Write(packetType);
-                            writer.Write(playerId);
-                            writer.Write(payload);
-
-                            byte[] forwardData = Encrypt(forwardStream.ToArray());
-
-                            foreach (IPEndPoint target in targets)
-                            {
-                                try
-                                {
-                                    await _udpServer.SendAsync(forwardData, forwardData.Length, target);
-                                }
-                                catch (Exception sendEx)
-                                {
-                                    Console.WriteLine($"{DateTime.Now}: [Server] Send error to {target}: {sendEx.Message}");
-                                }
-                            }
-                        }
-                        break;
-
-                    case (byte)PacketType.Location:
-                        string mapName = Encoding.UTF8.GetString(payload);
-                        lock (_clientMap)
-                            _clientMap[sender] = mapName;
-                        Console.WriteLine($"{DateTime.Now}: [Server] Updated map of {sender} ({playerId}) to '{mapName}'");
-                        break;
-
-                    case (byte)PacketType.Connect:
-                        lock (_clientMap)
-                            _clientMap[sender] = "World";
-                        Console.WriteLine($"{DateTime.Now}: [Server] Connected {sender} ({playerId})");
-                        break;
-
-                    case (byte)PacketType.Disconnect:
-                        lock (_clientMap)
-                            _clientMap.Remove(sender);
-                        Console.WriteLine($"{DateTime.Now}: [Server] Disconnected {sender} ({playerId})");
-                        break;
-
-                    default:
-                        Console.WriteLine($"{DateTime.Now}: [Server] Unknown packet type: {packetType}");
-                        break;
+                        Console.WriteLine();
+                        Console.WriteLine("=== Event Log (last events) ===");
+                        foreach (var line in _eventLogs)
+                            Console.WriteLine(line);
+                    }
+                    await Task.Delay(1_000);
                 }
-
-                _ = Task.Run(() => HandlePackages(data, sender));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"{DateTime.Now}: [Server] Receive ERROR: {ex}");
-            }
+            });
         }
-    }
 
-    private async Task HandlePackages(byte[] data, IPEndPoint sender)
-    {
-        try
+        public async Task StartAsync()
         {
-            using MemoryStream stream = new(data);
-            using BinaryReader reader = new(stream);
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss}: [Server] Voice server running...");
 
-            byte packetType = reader.ReadByte();
-            long playerId = reader.ReadInt64();
-            byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
-
-            switch (packetType)
+            while (true)
             {
-                case (byte)PacketType.Audio:
-                    if (!_clientMap.TryGetValue(sender, out string? senderMap))
-                        return;
+                try
+                {
+                    UdpReceiveResult result = await _udpServer.ReceiveAsync();
+                    IPEndPoint sender = result.RemoteEndPoint;
+                    byte[] data = Decrypt(result.Buffer);
 
-                    List<IPEndPoint> targets;
-                    lock (_clientMap)
+                    // Statistik: alle eingehenden Bytes zählen
+                    lock (_bytesReceived)
                     {
-                        targets = [ .. _clientMap
-                                       .Where(kvp => (kvp.Value == senderMap || senderMap == "World") && !Equals(kvp.Key, sender))
-                                       .Select(kvp => kvp.Key) ];
-                    }
+                        if (!_bytesReceived.ContainsKey(sender))
+                            _bytesReceived[sender] = new();
 
-                    if (targets.Count == 0) return;
-
-                    using (MemoryStream forwardStream = new())
-                    {
-                        await using BinaryWriter writer = new(forwardStream);
-                        writer.Write(packetType);
-                        writer.Write(playerId);
-                        writer.Write(payload);
-
-                        byte[] forwardData = Encrypt(forwardStream.ToArray());
-
-                        foreach (IPEndPoint target in targets)
+                        if (_bytesReceived.TryGetValue(sender, out UserPackages stats))
                         {
-                            try
-                            {
-                                await _udpServer.SendAsync(forwardData, forwardData.Length, target);
-                            }
-                            catch (Exception sendEx)
-                            {
-                                Console.WriteLine($"{DateTime.Now}: [Server] Send error to {target}: {sendEx.Message}");
-                            }
+                            stats.bytesReceived += result.Buffer.Length;
+                            stats.packagesReceived++;
+                            _bytesReceived[sender] = stats;
                         }
                     }
-                    break;
 
-                case (byte)PacketType.Location:
-                    string mapName = Encoding.UTF8.GetString(payload);
-                    lock (_clientMap)
-                        _clientMap[sender] = mapName;
-                    Console.WriteLine($"{DateTime.Now}: [Server] Updated map of {sender} ({playerId}) to '{mapName}'");
-                    break;
+                    using MemoryStream stream = new(data);
+                    using BinaryReader reader = new(stream);
 
-                case (byte)PacketType.Connect:
-                    lock (_clientMap)
-                        _clientMap[sender] = "World";
-                    Console.WriteLine($"{DateTime.Now}: [Server] Connected {sender} ({playerId})");
-                    break;
+                    byte packetType = reader.ReadByte();
+                    long playerId = reader.ReadInt64();
+                    byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
-                case (byte)PacketType.Disconnect:
-                    lock (_clientMap)
-                        _clientMap.Remove(sender);
-                    Console.WriteLine($"{DateTime.Now}: [Server] Disconnected {sender} ({playerId})");
-                    break;
+                    switch (packetType)
+                    {
+                        case (byte)PacketType.Location:
+                            string mapName = Encoding.UTF8.GetString(payload);
+                            lock (_clientMap)
+                                _clientMap[sender] = mapName;
+                            LogEvent($"Updated map of {sender.Address}:{sender.Port} ({playerId}) to '{mapName}'");
+                            break;
 
-                default:
-                    Console.WriteLine($"{DateTime.Now}: [Server] Unknown packet type: {packetType}");
-                    break;
+                        case (byte)PacketType.Connect:
+                            lock (_clientMap)
+                                _clientMap[sender] = "World";
+                            LogEvent($"Connected {sender.Address}:{sender.Port} ({playerId})");
+                            break;
+
+                        case (byte)PacketType.Disconnect:
+                            lock (_clientMap)
+                                _clientMap.Remove(sender);
+                            lock (_bytesReceived)
+                                _bytesReceived.Remove(sender);
+                            LogEvent($"Disconnected {sender.Address}:{sender.Port} ({playerId})");
+                            break;
+
+                        case (byte)PacketType.Audio:
+                            // Audio-Pakete werden nicht in Event-Log geschrieben, aber weitergeleitet
+                            await HandleAudioAsync(packetType, playerId, payload, sender);
+                            break;
+
+                        default:
+                            LogEvent($"Unknown packet type: {packetType} from {sender.Address}:{sender.Port}");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"{DateTime.Now:HH:mm:ss}: [Server] Receive ERROR: {ex}");
+                }
             }
         }
-        catch (Exception innerEx)
+
+        private async Task HandleAudioAsync(byte packetType, long playerId, byte[] payload, IPEndPoint sender)
         {
-            Console.WriteLine($"{DateTime.Now}: [Server] Task ERROR: {innerEx}");
+            if (!_clientMap.TryGetValue(sender, out string? senderMap))
+                return;
+
+            List<IPEndPoint> targets;
+            lock (_clientMap)
+            {
+                targets = _clientMap
+                    .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
+                                  && !(kvp.Key.Address.Equals(sender.Address) && kvp.Key.Port == sender.Port))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+            }
+
+            if (targets.Count == 0) return;
+
+            using MemoryStream forwardStream = new();
+            using (BinaryWriter writer = new(forwardStream))
+            {
+                writer.Write(packetType);
+                writer.Write(playerId);
+                writer.Write(payload);
+            }
+
+            byte[] forwardData = Encrypt(forwardStream.ToArray());
+
+            foreach (IPEndPoint target in targets)
+            {
+                try
+                {
+                    await _udpServer.SendAsync(forwardData, forwardData.Length, target);
+                }
+                catch (Exception sendEx)
+                {
+                    Console.WriteLine($"{DateTime.Now:HH:mm:ss}: [Server] Send error to {target}: {sendEx.Message}");
+                }
+            }
         }
-    }
 
-    public void Stop()
-    {
-        _udpServer.Close();
-        Console.WriteLine($"{DateTime.Now}: [Server] UDP server stopped.");
-    }
+        private void LogEvent(string message)
+        {
+            string timestamp = DateTime.Now.ToString("HH:mm:ss");
+            string msg = $"{timestamp}: [Server] {message}";
+            lock (consoleLock)
+            {
+                _eventLogs.Add(msg);
+                if (_eventLogs.Count > 10)
+                    _eventLogs.RemoveAt(0);
+            }
+            File.AppendAllText(logFilePath, msg + Environment.NewLine);
+        }
 
-    /* ---------- AES helpers ---------- */
-    private Aes CreateAes()
-    {
-        Aes aes = Aes.Create();
-        aes.Key = Encoding.UTF8.GetBytes(_config.EncryptionKey);
-        aes.IV = Encoding.UTF8.GetBytes(_config.EncryptionIV);
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-        return aes;
-    }
+        public void Stop()
+        {
+            _udpServer.Close();
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss}: [Server] UDP server stopped.");
+        }
 
-    private byte[] Encrypt(byte[] data)
-    {
-        using Aes aes = CreateAes();
-        using ICryptoTransform enc = aes.CreateEncryptor();
-        return enc.TransformFinalBlock(data, 0, data.Length);
-    }
+        #region AES helpers
+        private Aes CreateAes()
+        {
+            var aes = Aes.Create();
+            aes.Key = Encoding.UTF8.GetBytes(_config.EncryptionKey);
+            aes.IV = Encoding.UTF8.GetBytes(_config.EncryptionIV);
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+            return aes;
+        }
 
-    private byte[] Decrypt(byte[] data)
-    {
-        using Aes aes = CreateAes();
-        using ICryptoTransform dec = aes.CreateDecryptor();
-        return dec.TransformFinalBlock(data, 0, data.Length);
+        private byte[] Encrypt(byte[] data)
+        {
+            using Aes aes = CreateAes();
+            using ICryptoTransform enc = aes.CreateEncryptor();
+            return enc.TransformFinalBlock(data, 0, data.Length);
+        }
+
+        private byte[] Decrypt(byte[] data)
+        {
+            using Aes aes = CreateAes();
+            using ICryptoTransform dec = aes.CreateDecryptor();
+            return dec.TransformFinalBlock(data, 0, data.Length);
+        }
+        #endregion
     }
 }
