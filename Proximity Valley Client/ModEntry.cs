@@ -156,32 +156,33 @@ public class ModEntry : Mod
 
     private void UpdateDiscordRichPresence()
     {
-        discordRpcClient.UpdateState(Regex.Replace(Game1.player.currentLocation.Name, @"(\B[A-Z])", " $1"));
-        discordRpcClient.UpdateDetails($"{Game1.season}, Day {Game1.dayOfMonth} - Year {Game1.year}");
-        discordRpcClient.UpdateLargeAsset("stardew_logo",
-            $"Farming: {Game1.player.FarmingLevel}\r\n" +
-            $"Mining: {Game1.player.MiningLevel}\r\n" +
-            $"Foraging: {Game1.player.ForagingLevel}\r\n" +
-            $"Fishing: {Game1.player.FishingLevel}\r\n" +
-            $"Combat: {Game1.player.CombatLevel}");
-        switch (Game1.season)
+        // State & Details in einem Objekt bündeln
+        var presence = new RichPresence
         {
-            case Season.Spring:
-                discordRpcClient.UpdateSmallAsset("stardew_season_spring");
-                break;
-            case Season.Summer:
-                discordRpcClient.UpdateSmallAsset("stardew_season_summer");
-                break;
-            case Season.Fall:
-                discordRpcClient.UpdateSmallAsset("stardew_season_autumn");
-                break;
-            case Season.Winter:
-                discordRpcClient.UpdateSmallAsset("stardew_season_winter");
-                break;
-            default:
-                discordRpcClient.UpdateSmallAsset("stardew_logo");
-                break;
-        }
+            State = Regex.Replace(Game1.player.currentLocation.Name, @"(\B[A-Z])", " $1"),
+            Details = $"{Game1.season}, Day {Game1.dayOfMonth} - Year {Game1.year}",
+            Assets = new Assets
+            {
+                LargeImageKey = "stardew_logo",
+                LargeImageText =
+                    $"Farming: {Game1.player.FarmingLevel}\r\n" +
+                    $"Mining: {Game1.player.MiningLevel}\r\n" +
+                    $"Foraging: {Game1.player.ForagingLevel}\r\n" +
+                    $"Fishing: {Game1.player.FishingLevel}\r\n" +
+                    $"Combat: {Game1.player.CombatLevel}",
+                SmallImageKey = Game1.season switch
+                {
+                    Season.Spring => "stardew_season_spring",
+                    Season.Summer => "stardew_season_summer",
+                    Season.Fall => "stardew_season_autumn",
+                    Season.Winter => "stardew_season_winter",
+                    _ => "stardew_logo"
+                }
+            }
+        };
+
+        // Nur ein einziger RPC-Call
+        discordRpcClient.SetPresence(presence);
     }
 
     private void Input_ButtonReleased(object? sender, ButtonReleasedEventArgs e)
