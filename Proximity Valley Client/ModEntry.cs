@@ -21,11 +21,11 @@ public class ModEntry : Mod
     internal ModConfig Config;
 
     private string currentMap = "World";
-    private bool isWalkieTalkie = false;
 
     internal long playerID = -1; // Unique ID for the player, initialized to -1
     internal bool isPushToTalking = false;
     internal bool isMuted = false;
+    internal bool isGlobalTalking = false; // Flag for global talking mode
     internal bool devOptionsEnabled = false; // Flag for enabling developer options
 
     private IModHelper Helper;
@@ -207,7 +207,7 @@ public class ModEntry : Mod
     {
         if (e.Button == Config.GlobalTalkButton)
         {
-            isWalkieTalkie = false;
+            isGlobalTalking = false;
             voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(currentMap));
         }
         else if (e.Button == Config.PushToTalkButton)
@@ -220,7 +220,7 @@ public class ModEntry : Mod
     {
         if (e.Button == Config.GlobalTalkButton)
         {
-            isWalkieTalkie = true;
+            isGlobalTalking = true;
             voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes("World"));
         }
         else if (e.Button == Config.PushToTalkButton)
@@ -253,14 +253,15 @@ public class ModEntry : Mod
         else if (Config.PushToTalk && !isPushToTalking)
             SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
         else
-            SpriteText.drawString(b, $"Talking{(isWalkieTalkie ? " Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            SpriteText.drawString(b, $"Talking{(isGlobalTalking ? " Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
 
 
         // Players Indicator
         int index = 0;
         foreach (Farmer? farmer in Game1.getOnlineFarmers())
         {
-            if (farmer.currentLocation != Game1.player.currentLocation && !devOptionsEnabled)
+            voiceClient.playerAudioStreams.TryGetValue(farmer.UniqueMultiplayerID, out PlayerAudioStream? stream);
+            if (farmer.currentLocation != Game1.player.currentLocation && (!devOptionsEnabled || (stream != null && stream.isGlobalTalking)))
                 continue;
 
             // Positionsvergleich
@@ -294,7 +295,14 @@ public class ModEntry : Mod
             string devExtraPrefix = devOptionsEnabled ? $"{farmer.Position} " : "";
             string devExtraSuffix = devOptionsEnabled ? $" - {farmer.currentLocation.Name}" : "";
 
-            SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 75), drawBGScroll: 0, height: 20);
+
+            string playerTalkingStatus = stream != null
+                ? (stream.isGlobalTalking
+                    ? "(Global)"
+                    : stream.Buffer.BufferedBytes == 0 ? "(Talking)" : "")
+                : "";
+
+            SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 200 - (index * 75), drawBGScroll: 0, height: 20);
 
 
             if (Config.ShowPlayerNames)
@@ -302,6 +310,7 @@ public class ModEntry : Mod
                 Vector2 worldPos = farmer.Position + new Vector2(32, -Game1.tileSize * 2.5f);
                 Vector2 screenPos = Game1.GlobalToLocal(worldPos);
 
+                SpriteText.fontPixelZoom = 2;
 
                 int x = (int)screenPos.X - SpriteText.getWidthOfString(farmer.displayName) / 2;
                 int y = (int)screenPos.Y;
@@ -324,6 +333,8 @@ public class ModEntry : Mod
                 {
                     b.DrawString(Game1.tinyFont, farmer.displayName, new Vector2(x, y), Color.Black, 0f, Vector2.Zero, Game1.options.zoomLevel, SpriteEffects.None, 0.99f);
                 }
+
+                SpriteText.fontPixelZoom = 3;
             }
 
 
@@ -335,7 +346,7 @@ public class ModEntry : Mod
             int sliderHeight = 10;
 
             // Volume holen oder Default setzen
-            if (!voiceClient.playerAudioStreams.TryGetValue(farmer.UniqueMultiplayerID, out PlayerAudioStream stream))
+            if (stream == null)
             {
                 index++;
                 continue;
@@ -453,7 +464,10 @@ public class ModEntry : Mod
                 name: () => "Sample Rate",
                 tooltip: () => "Abtastrate für Audio (Hz)",
                 getValue: () => Config.SampleRate,
-                setValue: value => Config.SampleRate = value
+                setValue: value => Config.SampleRate = value,
+                min: 1000,
+                max: 44_100,
+                interval: 100
             );
 
             gmcm.AddNumberOption(
@@ -461,7 +475,10 @@ public class ModEntry : Mod
                 name: () => "Bits Per Sample",
                 tooltip: () => "Bits pro Abtastwert",
                 getValue: () => Config.Bits,
-                setValue: value => Config.Bits = value
+                setValue: value => Config.Bits = value,
+                min: 16,
+                max: 32,
+                interval: 8
             );
 
             gmcm.AddNumberOption(
@@ -469,7 +486,9 @@ public class ModEntry : Mod
                 name: () => "Channels",
                 tooltip: () => "Anzahl der Audiokanäle",
                 getValue: () => Config.Channels,
-                setValue: value => Config.Channels = value
+                setValue: value => Config.Channels = value,
+                min: 1,
+                max: 2
             );
 
             gmcm.AddNumberOption(

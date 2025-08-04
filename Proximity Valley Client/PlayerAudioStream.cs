@@ -11,6 +11,7 @@ public class PlayerAudioStream
     public WaveOutEvent Output { get; }
 
     public float userVolume = 1f;
+    public bool isGlobalTalking = false;
 
     public PlayerAudioStream(WaveFormat format, int bufferSeconds, int device, float initialVolume, float initialPan)
     {

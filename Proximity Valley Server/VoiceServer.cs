@@ -61,7 +61,8 @@ namespace Proximity_Valley_Server
                         Console.WriteLine("=== Connected Clients (bytes received) ===");
                         foreach (var kvp in _bytesReceived)
                         {
-                            Console.WriteLine($"{kvp.Key.Address}:{kvp.Key.Port} – {kvp.Value.bytesReceived / kvp.Value.packagesReceived} bytes/s");
+                            Console.WriteLine($"{kvp.Key.Address}:{kvp.Key.Port} – {(kvp.Value.bytesReceived == 0 ? kvp.Value.bytesReceived : kvp.Value.bytesReceived / kvp.Value.packagesReceived)} bytes/s");
+                            _bytesReceived[kvp.Key] = new();
                         }
                         Console.WriteLine();
                         Console.WriteLine("=== Event Log (last events) ===");
@@ -104,6 +105,7 @@ namespace Proximity_Valley_Server
 
                     byte packetType = reader.ReadByte();
                     long playerId = reader.ReadInt64();
+                    byte extraData = reader.ReadByte();
                     byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
                     switch (packetType)
@@ -131,7 +133,7 @@ namespace Proximity_Valley_Server
 
                         case (byte)PacketType.Audio:
                             // Audio-Pakete werden nicht in Event-Log geschrieben, aber weitergeleitet
-                            await HandleAudioAsync(packetType, playerId, payload, sender);
+                            await HandleAudioAsync(packetType, playerId, [extraData, ..payload], sender);
                             break;
 
                         default:

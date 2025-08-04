@@ -31,7 +31,7 @@ public class VoiceClient
 		Location = 0x02,
 		Connect = 0x03,
 		Disconnect = 0x04,
-	}
+    }
 
     public VoiceClient(IMonitor monitor)
     {
@@ -65,10 +65,11 @@ public class VoiceClient
 
                 byte pType = reader.ReadByte();
                 long playerId = reader.ReadInt64();
+                byte extraData = reader.ReadByte();
                 byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
                 if (pType == (byte)PacketType.Audio)
-                    _ = Task.Run(() => ProcessIncomingAudio(playerId, payload));
+                    _ = Task.Run(() => ProcessIncomingAudio(playerId, payload, extraData));
                 else
                     Monitor.Log($"[Voice] Unknown packet type: {pType}", LogLevel.Trace);
             }
@@ -79,7 +80,7 @@ public class VoiceClient
         }
     }
 
-    private void ProcessIncomingAudio(long playerId, byte[] audioData)
+    private void ProcessIncomingAudio(long playerId, byte[] audioData, byte extraData)
     {
         // 1) kein Self‑Audio
         if (playerId == modEntry.playerID)
@@ -106,6 +107,8 @@ public class VoiceClient
             );
             playerAudioStreams[playerId] = stream;
         }
+
+        stream.isGlobalTalking = (extraData & 0x01) != 0; // Bit 0: Global Talk status
 
         // füge die neuen Samples hinzu
         stream.AddSamples(audioData, 0, audioData.Length);
@@ -216,6 +219,9 @@ public class VoiceClient
 
             writer.Write((byte)packetType);
             writer.Write(playerId);
+            byte extraData = 0;
+            extraData |= (byte)(modEntry.isGlobalTalking ? 0x01 : 0x00); // Bit 0: Global Talk status
+            writer.Write(extraData);
             writer.Write(payload);
 
             byte[] fullPacket = Encrypt(stream.ToArray());
@@ -265,8 +271,6 @@ public class VoiceClient
         // 1. Entfernung berechnen
         float distance = Vector2.Distance(local.Position, remote.Position);
         float maxDistance = 32f * Game1.tileSize; // Max hörbarer Bereich
-
-        Monitor.Log($"[Voice] Distance between {local.Name} and {remote.Name}: {distance} pixels", LogLevel.Info);
 
         // 2. Lautstärke abnehmen mit Distanz (linear oder exponentiell)
         float volume = Math.Max(0f, 1f - (distance / maxDistance));
