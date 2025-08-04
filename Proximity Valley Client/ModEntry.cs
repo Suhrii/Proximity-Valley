@@ -37,8 +37,10 @@ public class ModEntry : Mod
         Monitor.Log($"[Voice] Boot", LogLevel.Debug);
         Config = helper.ReadConfig<ModConfig>();
 
-        voiceClient = new(Monitor);
-        voiceClient.modEntry = this; // Set the mod entry reference in the voice client
+        voiceClient = new(Monitor)
+        {
+            modEntry = this // Set the mod entry reference in the voice client
+        };
         voiceClient.Start();
 
         helper.Events.GameLoop.GameLaunched += OnGameLaunched;
@@ -53,6 +55,8 @@ public class ModEntry : Mod
 
         helper.Events.Display.RenderedActiveMenu += OnRenderedActiveMenu;
 
+        helper.Events.Multiplayer.PeerConnected += Multiplayer_PeerConnected;
+
 
         discordRpcClient = new DiscordRpcClient("1401173401498030210", autoEvents: true);
         discordRpcClient.Initialize();
@@ -64,9 +68,6 @@ public class ModEntry : Mod
             Assets = new Assets()
             {
                 LargeImageKey = "stardew_logo",
-                //LargeImageText = "",
-                //SmallImageKey = "stardew_logo",
-                //SmallImageText = ""
             },
             Timestamps = new Timestamps()
             {
@@ -75,7 +76,10 @@ public class ModEntry : Mod
         });
     }
 
-
+    private void Multiplayer_PeerConnected(object? sender, PeerConnectedEventArgs e)
+    {
+        playerID = Game1.player.UniqueMultiplayerID;
+    }
 
     private static readonly int[] LevelXpRequirements = new int[]
     {
@@ -108,7 +112,7 @@ public class ModEntry : Mod
             ShowRelationshipProgress();
     }
 
-    private void ShowRelationshipProgress ()
+    private void ShowRelationshipProgress()
     {
         if (Game1.activeClickableMenu is not GameMenu menu)
             return;
@@ -119,13 +123,26 @@ public class ModEntry : Mod
         SpriteBatch b = Game1.spriteBatch;
         Farmer player = Game1.player;
 
+        Rectangle clip = new(socialPage.xPositionOnScreen, socialPage.yPositionOnScreen + 100, socialPage.width, socialPage.height - 200);
+        b.End();
+        b.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, null, new RasterizerState { ScissorTestEnable = true });
+        b.GraphicsDevice.ScissorRectangle = clip;
+
         for (int i = 0; i < socialPage.SocialEntries.Count; i++)
         {
             if (socialPage.SocialEntries[i].Friendship == null) continue;
+            var slot = socialPage.characterSlots[i];
+            if (!clip.Intersects(slot.bounds)) continue;
+
             string tooltip = $"{socialPage.SocialEntries[i].Friendship.Points} / {(socialPage.SocialEntries[i].HeartLevel + 1) * 250}";
-            b.DrawString(Game1.smallFont, tooltip, new Vector2(socialPage.characterSlots[i].bounds.X + socialPage.characterSlots[i].bounds.Width / 3, socialPage.characterSlots[i].bounds.Y + 10), Color.Black);
+            Vector2 pos = new Vector2(slot.bounds.X + slot.bounds.Width / 3, slot.bounds.Y + 10);
+            b.DrawString(Game1.smallFont, tooltip, pos, Color.Black);
         }
+
+        b.End();
+        b.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp);
     }
+
 
     private void ShowSkillsXP (RenderedActiveMenuEventArgs e)
     {
@@ -140,8 +157,9 @@ public class ModEntry : Mod
 
         for (int i = 0; i < skillsPage.skillAreas.Count; i++)
         {
-            int xp = player.experiencePoints[i];
-            int level = player.GetSkillLevel(i);
+            int index = i == 1 ? 3 : i == 3 ? 1 : i; // Adjust index for Mining and Fishing
+            int xp = player.experiencePoints[index];
+            int level = player.GetSkillLevel(index);
             int xpForNext = GetXpRequiredForLevel(level + 1);
             string tooltip = $"XP: {xp} / {xpForNext}";
 
@@ -235,7 +253,7 @@ public class ModEntry : Mod
         else if (Config.PushToTalk && !isPushToTalking)
             SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
         else
-            SpriteText.drawString(b, $"Talking {(isWalkieTalkie ? "Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            SpriteText.drawString(b, $"Talking{(isWalkieTalkie ? " Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
 
 
         // Players Indicator
@@ -259,7 +277,7 @@ public class ModEntry : Mod
                     if (dx > 0)
                         arrow = ">";
                     else if (dx < 0)
-                        arrow = "<";
+                        arrow = "@";
                 }
                 else
                 {
@@ -276,15 +294,36 @@ public class ModEntry : Mod
             string devExtraPrefix = devOptionsEnabled ? $"{farmer.Position} " : "";
             string devExtraSuffix = devOptionsEnabled ? $" - {farmer.currentLocation.Name}" : "";
 
-            SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 50), drawBGScroll: 0);
+            SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, b.GraphicsDevice.Viewport.Height - 200 - (index * 75), drawBGScroll: 0, height: 20);
 
 
             if (Config.ShowPlayerNames)
             {
-                Vector2 worldPos = farmer.Position + new Vector2(32, -Game1.tileSize * 2.5f); // Mitte + über Kopf
-                Vector2 screenPos = Game1.GlobalToLocal(worldPos); // korrekt: überladene Methode
+                Vector2 worldPos = farmer.Position + new Vector2(32, -Game1.tileSize * 2.5f);
+                Vector2 screenPos = Game1.GlobalToLocal(worldPos);
 
-                SpriteText.drawString(Game1.spriteBatch, farmer.displayName, (int)screenPos.X - SpriteText.getWidthOfString(farmer.displayName) / 2, (int)screenPos.Y, drawBGScroll: 1);
+
+                int x = (int)screenPos.X - SpriteText.getWidthOfString(farmer.displayName) / 2;
+                int y = (int)screenPos.Y;
+                x = (int)(x * Game1.options.zoomLevel);
+                y = (int)(y * Game1.options.zoomLevel);
+                if (Config.PlayerNamesRenderType == 0)
+                {
+                    SpriteText.drawString(Game1.spriteBatch, farmer.displayName, x, y, drawBGScroll: Config.PlayerNamesScroll);
+                }
+                else if (Config.PlayerNamesRenderType == 1)
+                {
+                    b.Draw(Game1.staminaRect, new Vector2(x, y), Color.White);
+                    b.DrawString(Game1.dialogueFont, farmer.displayName, new Vector2(x, y), Color.Black, 0f, Vector2.Zero, Game1.options.zoomLevel, SpriteEffects.None, 0.99f);
+                }
+                else if (Config.PlayerNamesRenderType == 2)
+                {
+                    b.DrawString(Game1.smallFont, farmer.displayName, new Vector2(x, y), Color.Black, 0f, Vector2.Zero, Game1.options.zoomLevel, SpriteEffects.None, 0.99f);
+                }
+                else if (Config.PlayerNamesRenderType == 3)
+                {
+                    b.DrawString(Game1.tinyFont, farmer.displayName, new Vector2(x, y), Color.Black, 0f, Vector2.Zero, Game1.options.zoomLevel, SpriteEffects.None, 0.99f);
+                }
             }
 
 
@@ -297,7 +336,10 @@ public class ModEntry : Mod
 
             // Volume holen oder Default setzen
             if (!voiceClient.playerAudioStreams.TryGetValue(farmer.UniqueMultiplayerID, out PlayerAudioStream stream))
+            {
+                index++;
                 continue;
+            }
 
             Color barColor = Color.SkyBlue;
             Color handleColor = Color.White;
@@ -357,6 +399,8 @@ public class ModEntry : Mod
     {
         Monitor.Log($"[Voice] Startet", LogLevel.Debug);
 
+        playerID = Game1.player.UniqueMultiplayerID;
+
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {
             try
@@ -368,9 +412,6 @@ public class ModEntry : Mod
                 // Ignoriere Fehler beim Shutdown
             }
         };
-
-
-        playerID = Game1.player.UniqueMultiplayerID;
 
 
         // GMCM - Integration
@@ -565,6 +606,24 @@ public class ModEntry : Mod
                 tooltip: () => "Show the Points in the Relationship Menu",
                 getValue: () => Config.ShowRealtionshipPoints,
                 setValue: value => Config.ShowRealtionshipPoints = value
+            );
+            gmcm.AddNumberOption(
+                mod: this.ModManifest,
+                name: () => "Player Names Scroll",
+                tooltip: () => "Scroll Speed for Player Names",
+                getValue: () => Config.PlayerNamesScroll,
+                setValue: value => Config.PlayerNamesScroll = value,
+                min: -1,
+                max: 10
+            );
+            gmcm.AddNumberOption(
+                mod: this.ModManifest,
+                name: () => "Player Names Render Type",
+                tooltip: () => "Render Type for Player Names (0 = SpriteText, 1 = DialogueFont, 2 = SmallFont, 3 = TinyFont)",
+                getValue: () => Config.PlayerNamesRenderType,
+                setValue: value => Config.PlayerNamesRenderType = value,
+                min: 0,
+                max: 3
             );
         }
 

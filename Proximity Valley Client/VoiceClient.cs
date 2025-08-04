@@ -18,8 +18,6 @@ public class VoiceClient
     internal ModEntry modEntry = null!; // wird extern gesetzt
 
     private UdpClient udpClient;
-    private BufferedWaveProvider waveProvider;
-    private WaveOutEvent waveOut;
     private WaveInEvent waveIn;
 
     private DateTime lastVoiceDetected = DateTime.MinValue;
@@ -49,7 +47,6 @@ public class VoiceClient
             Monitor.Log("[Voice] Initializing UDP socket...", LogLevel.Debug);
             udpClient = new UdpClient(modEntry.Config.LocalPort) { EnableBroadcast = false };
 
-            SetupOutput();
             SetupInput();
 
             // erste Registrierung
@@ -128,6 +125,7 @@ public class VoiceClient
 
             // Basiswerte aus Entfernung/Direktion
             (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId) ?? Game1.player);
+            Monitor.Log($"[Voice] Updating stream for player {playerId}: volume={volume}, pan={pan}", LogLevel.Info);
 
             stream.UpdatePanAndVolume(pan, volume);
         }
@@ -201,35 +199,10 @@ public class VoiceClient
         micVolumeLevel = (float)Math.Sqrt(sumSquares / sampleBuffer.Length) / short.MaxValue;
     }
 
-    private void SetupOutput()
-    {
-        WaveFormat format = new(modEntry.Config.SampleRate, modEntry.Config.Bits, modEntry.Config.Channels);
-
-        waveProvider = new BufferedWaveProvider(format)
-        {
-            DiscardOnBufferOverflow = true,
-            BufferLength = format.AverageBytesPerSecond * modEntry.Config.OutputBufferSeconds
-        };
-
-        VolumeWaveProvider16 volumeProvider = new(waveProvider)
-        {
-            Volume = modEntry.Config.OutputVolume
-        };
-
-
-        waveOut = new WaveOutEvent { DeviceNumber = modEntry.Config.WaveOutDevice };
-        waveOut.Init(volumeProvider);
-        waveOut.Play();
-
-        Monitor.Log("[Voice] Audio output initialized", LogLevel.Debug);
-    }
-
     public void Stop()
     {
         waveIn?.StopRecording();
         waveIn?.Dispose();
-        waveOut?.Stop();
-        waveOut?.Dispose();
         udpClient?.Close();
         Monitor.Log("[Voice] Client stopped", LogLevel.Debug);
     }
@@ -292,6 +265,8 @@ public class VoiceClient
         // 1. Entfernung berechnen
         float distance = Vector2.Distance(local.Position, remote.Position);
         float maxDistance = 32f * Game1.tileSize; // Max hörbarer Bereich
+
+        Monitor.Log($"[Voice] Distance between {local.Name} and {remote.Name}: {distance} pixels", LogLevel.Info);
 
         // 2. Lautstärke abnehmen mit Distanz (linear oder exponentiell)
         float volume = Math.Max(0f, 1f - (distance / maxDistance));

@@ -40,4 +40,6 @@ public class ModConfig
     public bool ShowSkillXP { get; set; } = false;
     public bool ShowRealtionshipPoints { get; set; } = false;
     public bool ShowPlayerNames { get; set; } = false;
+    public int PlayerNamesScroll { get; set; } = 0;
+    public int PlayerNamesRenderType { get; set; } = 0;
 }
