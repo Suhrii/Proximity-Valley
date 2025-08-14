@@ -30,6 +30,8 @@ public class ModEntry : Mod
 
     private IModHelper Helper;
 
+    private Texture2D speakerTexture;
+
     public override void Entry(IModHelper helper)
     {
         Helper = helper;
@@ -56,6 +58,9 @@ public class ModEntry : Mod
         helper.Events.Display.RenderedActiveMenu += OnRenderedActiveMenu;
 
         helper.Events.Multiplayer.PeerConnected += Multiplayer_PeerConnected;
+
+
+        speakerTexture = helper.ModContent.Load<Texture2D>("assets/Speaker.png");
 
 
         discordRpcClient = new DiscordRpcClient("1401173401498030210", autoEvents: true);
@@ -244,24 +249,33 @@ public class ModEntry : Mod
 
         int height = Math.Clamp((int)(200 * voiceClient.micVolumeLevel), 0, 100);
 
-        b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 120, 20, 100), Color.White);
-        b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
-        b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - Math.Clamp((int)(Config.InputThreshold * 200), 0, 100), 20, 5), Color.DarkRed);
+        if (Config.ShowTalkingUI)
+        {
+            b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 120, 20, 100), Color.White);
+            b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - height, 20, height), Color.LimeGreen);
+            b.Draw(Game1.staminaRect, new Rectangle(20, b.GraphicsDevice.Viewport.Height - 20 - Math.Clamp((int)(Config.InputThreshold * 200), 0, 100), 20, 5), Color.DarkRed);
 
-        if (isMuted)
-            SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
-        else if (Config.PushToTalk && !isPushToTalking)
-            SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
-        else
-            SpriteText.drawString(b, $"Talking{(isGlobalTalking ? " Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            if (isMuted)
+                SpriteText.drawString(b, $"Muted", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            else if (Config.PushToTalk && !isPushToTalking)
+                SpriteText.drawString(b, $"Muted (Press '{Config.PushToTalkButton}' to talk)", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
+            else
+                SpriteText.drawString(b, $"Talking{(isGlobalTalking ? " Global" : "")}", 80, b.GraphicsDevice.Viewport.Height - 80, drawBGScroll: 1);
 
+        }
 
         // Players Indicator
         int index = 0;
         foreach (Farmer? farmer in Game1.getOnlineFarmers())
         {
             voiceClient.playerAudioStreams.TryGetValue(farmer.UniqueMultiplayerID, out PlayerAudioStream? stream);
-            if (farmer.currentLocation != Game1.player.currentLocation && (!devOptionsEnabled || (stream != null && stream.isGlobalTalking)))
+            Monitor.Log(voiceClient.playerAudioStreams.Count + " - ");
+            foreach (var item in voiceClient.playerAudioStreams.Keys)
+            {
+                Monitor.Log(item + " - " + voiceClient.playerAudioStreams[item].userVolume + " - " + voiceClient.playerAudioStreams[item].isGlobalTalking);
+            }
+
+            if (farmer.currentLocation != Game1.player.currentLocation && !devOptionsEnabled && (stream == null || !stream.isGlobalTalking))
                 continue;
 
             // Positionsvergleich
@@ -294,15 +308,27 @@ public class ModEntry : Mod
 
             string devExtraPrefix = devOptionsEnabled ? $"{farmer.Position} " : "";
             string devExtraSuffix = devOptionsEnabled ? $" - {farmer.currentLocation.Name}" : "";
+            
+            if (Config.ShowPlayerNamesOnLeft)
+            {
+                SpriteText.drawString(b, $"  {devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 200 - (index * 75), drawBGScroll: 0, height: 20);
 
-
-            string playerTalkingStatus = stream != null
-                ? (stream.isGlobalTalking
-                    ? "(Global)"
-                    : stream.Buffer.BufferedBytes == 0 ? "(Talking)" : "")
-                : "";
-
-            SpriteText.drawString(b, $"{devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 200 - (index * 75), drawBGScroll: 0, height: 20);
+                if (stream != null && stream.isGlobalTalking) // talking global
+                {
+                    Rectangle sourceA = new(0, 0, 32, 32);
+                    b.Draw(speakerTexture, new Vector2(16, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 220 - (index * 75)), sourceA, Color.White, 0, Vector2.Zero, 3, SpriteEffects.None, 1);
+                }
+                else if (stream == null || (stream != null && stream.Buffer.BufferedBytes == 0)) // not talking
+                {
+                    Rectangle sourceA = new(0, 32, 32, 32);
+                    b.Draw(speakerTexture, new Vector2(16, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 220 - (index * 75)), sourceA, Color.White, 0, Vector2.Zero, 3, SpriteEffects.None, 1);
+                }
+                else // talking
+                {
+                    Rectangle sourceA = new(32, 0, 32, 32);
+                    b.Draw(speakerTexture, new Vector2(16, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 220 - (index * 75)), sourceA, Color.White, 0, Vector2.Zero, 3, SpriteEffects.None, 1);
+                }
+            }
 
 
             if (Config.ShowPlayerNames)
@@ -340,27 +366,30 @@ public class ModEntry : Mod
 
             #region Per Player Volume Slider 
 
-            int sliderX = 400;
-            int sliderY = b.GraphicsDevice.Viewport.Height - 190 - (index * 50);
-            int sliderWidth = 100;
-            int sliderHeight = 10;
-
-            // Volume holen oder Default setzen
-            if (stream == null)
+            if (Config.ShowPlayerNamesOnLeft)
             {
-                index++;
-                continue;
+                int sliderX = 400;
+                int sliderY = b.GraphicsDevice.Viewport.Height - 190 - (index * 50);
+                int sliderWidth = 100;
+                int sliderHeight = 10;
+
+                // Volume holen oder Default setzen
+                if (stream == null)
+                {
+                    index++;
+                    continue;
+                }
+
+                Color barColor = Color.SkyBlue;
+                Color handleColor = Color.White;
+
+                // Hintergrund des Sliders
+                b.Draw(Game1.staminaRect, new Rectangle(sliderX, sliderY, sliderWidth, sliderHeight), Color.Gray);
+                // Gefüllter Bereich
+                b.Draw(Game1.staminaRect, new Rectangle(sliderX, sliderY, (int)(sliderWidth * stream.VolumeProvider.Volume), sliderHeight), barColor);
+                // "Griff" zeichnen
+                b.Draw(Game1.staminaRect, new Rectangle(sliderX + (int)(sliderWidth * stream.VolumeProvider.Volume) - 2, sliderY - 2, 4, sliderHeight + 4), handleColor);
             }
-
-            Color barColor = Color.SkyBlue;
-            Color handleColor = Color.White;
-
-            // Hintergrund des Sliders
-            b.Draw(Game1.staminaRect, new Rectangle(sliderX, sliderY, sliderWidth, sliderHeight), Color.Gray);
-            // Gefüllter Bereich
-            b.Draw(Game1.staminaRect, new Rectangle(sliderX, sliderY, (int)(sliderWidth * stream.VolumeProvider.Volume), sliderHeight), barColor);
-            // "Griff" zeichnen
-            b.Draw(Game1.staminaRect, new Rectangle(sliderX + (int)(sliderWidth * stream.VolumeProvider.Volume) - 2, sliderY - 2, 4, sliderHeight + 4), handleColor);
 
             #endregion
 
@@ -643,6 +672,21 @@ public class ModEntry : Mod
                 setValue: value => Config.PlayerNamesRenderType = value,
                 min: 0,
                 max: 3
+            );
+
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Show Talking UI",
+                tooltip: () => "Show the Talking UI (Mic Volume, Talking Indicator)",
+                getValue: () => Config.ShowTalkingUI,
+                setValue: value => Config.ShowTalkingUI = value
+            );
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Show Player Names on Left",
+                tooltip: () => "Show Player Names on the left side of the screen",
+                getValue: () => Config.ShowPlayerNamesOnLeft,
+                setValue: value => Config.ShowPlayerNamesOnLeft = value
             );
         }
 

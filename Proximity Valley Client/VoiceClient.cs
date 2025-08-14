@@ -127,10 +127,16 @@ public class VoiceClient
             PlayerAudioStream stream = kvp.Value;
 
             // Basiswerte aus Entfernung/Direktion
-            (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId) ?? Game1.player);
-            Monitor.Log($"[Voice] Updating stream for player {playerId}: volume={volume}, pan={pan}", LogLevel.Info);
+            var remote = modEntry.GetFarmerByID(playerId);
+            if (remote == null)
+            {
+                // Spieler nicht gefunden -> komplett stumm schalten
+                stream.UpdatePanAndVolume(0, 0);
+                continue;
+            }
+            (float volume, float pan) = GetVolumeAndPan(Game1.player, remote, stream.isGlobalTalking);
 
-            stream.UpdatePanAndVolume(pan, volume);
+            stream.UpdatePanAndVolume(pan, volume * modEntry.Config.OutputVolume);
         }
     }
 
@@ -264,7 +270,7 @@ public class VoiceClient
         return (float)Math.Sqrt(sum / sampleCount) / short.MaxValue;
     }
 
-    public (float volume, float pan) GetVolumeAndPan(Farmer local, Farmer remote)
+    public (float volume, float pan) GetVolumeAndPan(Farmer local, Farmer remote, bool talkingGlobal = false)
     {
         if (local == null || remote == null) return (0f, 0f);
 
@@ -273,14 +279,23 @@ public class VoiceClient
         float maxDistance = 32f * Game1.tileSize; // Max hörbarer Bereich
 
         // 2. Lautstärke abnehmen mit Distanz (linear oder exponentiell)
-        float volume = Math.Max(0f, 1f - (distance / maxDistance));
-        volume = MathF.Pow(volume, 1.5f); // optional: sanfterer Abfall
+        //float volume = Math.Max(0f, 1f - (distance / maxDistance));
+        //volume = MathF.Pow(volume, 1.5f); // optional: sanfterer Abfall
+        float volume = (float)VolumeFallOffFuntion(distance / Game1.tileSize, 1.1f, 45, 12, 0.1f);
+        if (talkingGlobal) volume = 1;
 
         // 3. Richtung für Panning (Links/Rechts)
         float dx = remote.Position.X - local.Position.X;
         float pan = Math.Clamp(dx / maxDistance, -1f, 1f); // -1 = links, 1 = rechts
 
         return (volume, pan);
+    }
+
+    public static double VolumeFallOffFuntion(double x, double kappa, double mu, double sigma, double beta)
+    {
+        double exponent = (x - mu) / sigma;
+        double denominator = kappa * (1 + Math.Exp(exponent));
+        return 1 / denominator + beta;
     }
 
 

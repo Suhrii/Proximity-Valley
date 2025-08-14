@@ -22,6 +22,12 @@
 	  </Reference>
 	</ItemGroup>
 
+	<ItemGroup>
+	  <None Update="assets\Speaker.png">
+	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+	  </None>
+	</ItemGroup>
+
 	<Target Name="CopyNAudioToModFolder" AfterTargets="Build">
 		<ItemGroup>
 			<NAudioDll Include="$(UserProfile)\\.nuget\\packages\\naudio\\2.2.1\\lib\\net6.0\\NAudio.dll" />
