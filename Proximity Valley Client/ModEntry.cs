@@ -8,7 +8,6 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.BellsAndWhistles;
 using StardewValley.Menus;
-using StardewValley.Network;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -16,6 +15,8 @@ namespace Proximity_Valley;
 
 public class ModEntry : Mod
 {
+    public static ModEntry Instance { get; private set; } = null!; // Singleton instance
+
     private VoiceClient voiceClient;
     DiscordRpcClient discordRpcClient;
     internal ModConfig Config;
@@ -34,6 +35,12 @@ public class ModEntry : Mod
 
     public override void Entry(IModHelper helper)
     {
+        if (Instance != null)
+        {
+            throw new InvalidOperationException("ModEntry should only be instantiated once.");
+        }
+        Instance = this; // Set the singleton instance
+
         Helper = helper;
 
         Monitor.Log($"[Voice] Boot", LogLevel.Debug);
@@ -79,6 +86,11 @@ public class ModEntry : Mod
                 Start = DateTime.UtcNow
             }
         });
+
+
+
+        Spectating spectating = new(helper);
+        WorldMapExtension worldMapExtension = new(helper);
     }
 
     private void Multiplayer_PeerConnected(object? sender, PeerConnectedEventArgs e)
@@ -149,7 +161,7 @@ public class ModEntry : Mod
     }
 
 
-    private void ShowSkillsXP (RenderedActiveMenuEventArgs e)
+    private void ShowSkillsXP(RenderedActiveMenuEventArgs e)
     {
         if (Game1.activeClickableMenu is not GameMenu menu)
             return;
@@ -308,7 +320,7 @@ public class ModEntry : Mod
 
             string devExtraPrefix = devOptionsEnabled ? $"{farmer.Position} " : "";
             string devExtraSuffix = devOptionsEnabled ? $" - {farmer.currentLocation.Name}" : "";
-            
+
             if (Config.ShowPlayerNamesOnLeft)
             {
                 SpriteText.drawString(b, $"  {devExtraPrefix}{farmer.displayName} {arrow}{devExtraSuffix}", 50, (int)(b.GraphicsDevice.Viewport.Height / 1.5f) - 200 - (index * 75), drawBGScroll: 0, height: 20);
