@@ -10,6 +10,7 @@ using StardewValley.BellsAndWhistles;
 using StardewValley.Menus;
 using System.Text;
 using System.Text.RegularExpressions;
+using static StardewValley.Minigames.TargetGame;
 
 namespace Proximity_Valley;
 
@@ -416,6 +417,9 @@ public class ModEntry : Mod
         if (!Context.IsWorldReady || !Game1.game1.IsActive)
             return;
 
+        if (Config.AutoZoomToMapSize)
+            UpdateZoom();
+
         if (Mouse.GetState().LeftButton == ButtonState.Pressed)
         {
             int mouseX = Game1.getMouseX();
@@ -688,6 +692,14 @@ public class ModEntry : Mod
 
             gmcm.AddBoolOption(
                 mod: this.ModManifest,
+                name: () => "Auto Zoom to Map Size",
+                tooltip: () => "Automatically zoom the camera to fit the whole map",
+                getValue: () => Config.AutoZoomToMapSize,
+                setValue: value => Config.AutoZoomToMapSize = value
+            );
+
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
                 name: () => "Show Talking UI",
                 tooltip: () => "Show the Talking UI (Mic Volume, Talking Indicator)",
                 getValue: () => Config.ShowTalkingUI,
@@ -715,8 +727,104 @@ public class ModEntry : Mod
             currentMap = map;
             UpdateDiscordRichPresence();
             voiceClient.SendPacket(VoiceClient.PacketType.Location, playerID, Encoding.UTF8.GetBytes(map));
+
+            if (Config.AutoZoomToMapSize)
+            {
+                FitMapToScreen();
+                zoomRepeat = 0;
+            }
         }
     }
+
+    private bool IsPointVisible(int px, int py)
+    {
+        return px >= Game1.viewport.X &&
+               px <= Game1.viewport.X + Game1.viewport.Width &&
+               py >= Game1.viewport.Y &&
+               py <= Game1.viewport.Y + Game1.viewport.Height;
+    }
+
+    private bool IsWholeMapVisible()
+    {
+        var loc = Game1.currentLocation;
+        if (loc?.Map == null)
+            return false;
+
+        int mapWidthPixels = loc.Map.Layers[0].LayerWidth * Game1.tileSize;
+        int mapHeightPixels = loc.Map.Layers[0].LayerHeight * Game1.tileSize;
+
+        // die 4 Ecken
+        var corners = new (int x, int y)[]
+        {
+        (0, 0),                          // oben links
+        (mapWidthPixels, 0),             // oben rechts
+        (0, mapHeightPixels),            // unten links
+        (mapWidthPixels, mapHeightPixels) // unten rechts
+        };
+
+        return corners.All(c => IsPointVisible(c.x, c.y));
+    }
+
+    int zoomRepeat = 0;
+    bool zoomedOut = false;
+    private void UpdateZoom()
+    {
+        if (zoomRepeat > 1) return;
+
+        var loc = Game1.currentLocation;
+        int mapWidthPixels = loc.Map.Layers[0].LayerWidth * Game1.tileSize;
+        int mapHeightPixels = loc.Map.Layers[0].LayerHeight * Game1.tileSize;
+        Game1.viewport.X = mapWidthPixels / 2 - Game1.viewport.Width / 2;
+        Game1.viewport.Y = mapHeightPixels / 2 - Game1.viewport.Height / 2;
+
+        if (!IsWholeMapVisible())
+        {
+            Game1.options.desiredBaseZoomLevel -= 0.01f; // smooth rauszoomen
+            zoomRepeat += zoomedOut ? 0 : 1;
+            zoomedOut = true;
+        }
+        else
+        {
+            Game1.options.desiredBaseZoomLevel += 0.01f; // smooth reinzoomen
+            zoomRepeat += zoomedOut ? 1 : 0;
+            zoomedOut = false;
+        }
+    }
+
+
+    private void FitMapToScreen()
+    {
+        var loc = Game1.currentLocation;
+        if (loc?.Map == null)
+            return;
+
+        int mapWidthPixels = loc.Map.Layers[0].LayerWidth * Game1.tileSize;
+        int mapHeightPixels = loc.Map.Layers[0].LayerHeight * Game1.tileSize;
+
+        int screenWidth = Game1.viewport.Width;
+        int screenHeight = Game1.viewport.Height;
+
+        float zoomX = (float)screenWidth / mapWidthPixels;
+        float zoomY = (float)screenHeight / mapHeightPixels;
+        float fitZoom = Math.Min(zoomX, zoomY);
+
+        float finalZoom;
+
+        if (mapWidthPixels > screenWidth || mapHeightPixels > screenHeight)
+        {
+            // Map ist größer als Bildschirm -> rauszoomen bis sie passt
+            finalZoom = Math.Clamp(fitZoom, 0.5f, 1.0f);
+        }
+        else
+        {
+            // Map kleiner als Bildschirm -> nicht über 1.0 gehen
+            finalZoom = 1.0f;
+        }
+
+        Game1.options.desiredBaseZoomLevel = finalZoom;
+    }
+
+
 
     public Farmer? GetFarmerByID(long id)
     {

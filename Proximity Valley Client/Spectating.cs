@@ -62,7 +62,7 @@ namespace Proximity_Valley
             }
 
             // Eigenen Farmer unsichtbar/frozen machen
-            Game1.player.freezePause = 0;
+            //Game1.player.freezePause = 0;
             Game1.player.CanMove = false;
         }
 
@@ -79,10 +79,23 @@ namespace Proximity_Valley
                 if (!isSpectating)
                 {
                     // Spectator Mode ausschalten: Kamera zurücksetzen und Spieler sichtbar machen
-                    Game1.player.freezePause = 0;
+                    //Game1.player.freezePause = 0;
                     Game1.player.CanMove = true;
                     Game1.currentLocation = Game1.player.currentLocation;
                 }
+            }
+
+
+
+            // Zoom:
+            if (e.Button == SButton.Up)
+            {
+                Game1.options.desiredBaseZoomLevel += 0.05f;
+            }
+
+            if (e.Button == SButton.Down)
+            {
+                Game1.options.desiredBaseZoomLevel -= 0.05f;
             }
 
             if (!isSpectating)

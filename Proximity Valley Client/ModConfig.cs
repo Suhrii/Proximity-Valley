@@ -39,6 +39,7 @@ public class ModConfig
     // Other Stuff
     public bool ShowSkillXP { get; set; } = false;
     public bool ShowRealtionshipPoints { get; set; } = false;
+    public bool AutoZoomToMapSize { get; set; } = false;
     public bool ShowPlayerNames { get; set; } = false;
     public bool ShowPlayerNamesOnLeft { get; set; } = false;
     public bool ShowTalkingUI { get; set; } = false;
