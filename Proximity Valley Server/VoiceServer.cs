@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System.Net;
 using System.Net.Sockets;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -21,6 +22,8 @@ namespace Proximity_Valley_Server
 
         private readonly ServerConfig _config;
 
+        private readonly bool hearSelf = false;
+
         enum PacketType : byte
         {
             Audio = 0x01,
@@ -33,10 +36,13 @@ namespace Proximity_Valley_Server
         {
             public int bytesReceived;
             public int packagesReceived;
+            public long playerID;
         }
 
-        public VoiceServer()
+        public VoiceServer(bool _hearSelf)
         {
+            hearSelf = _hearSelf;
+
             string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
             if (File.Exists(path))
                 _config = JsonConvert.DeserializeObject<ServerConfig>(File.ReadAllText(path)) ?? new ServerConfig();
@@ -61,7 +67,8 @@ namespace Proximity_Valley_Server
                         Console.WriteLine("=== Connected Clients (bytes received) ===");
                         foreach (var kvp in _bytesReceived)
                         {
-                            Console.WriteLine($"{kvp.Key.Address}:{kvp.Key.Port} – {(kvp.Value.bytesReceived == 0 ? kvp.Value.bytesReceived : kvp.Value.bytesReceived / kvp.Value.packagesReceived)} bytes/s");
+                            Console.WriteLine($"{kvp.Key.Address}:{kvp.Key.Port} – {(kvp.Value.bytesReceived == 0 ? kvp.Value.bytesReceived : kvp.Value.bytesReceived / kvp.Value.packagesReceived)} bytes/s" +
+                                $" ({kvp.Value.playerID})");
                             _bytesReceived[kvp.Key] = new();
                         }
                         Console.WriteLine();
@@ -96,6 +103,7 @@ namespace Proximity_Valley_Server
                         {
                             stats.bytesReceived += result.Buffer.Length;
                             stats.packagesReceived++;
+                            stats.playerID = BitConverter.ToInt64(data, 1); // playerId ist immer an Byte 1-8
                             _bytesReceived[sender] = stats;
                         }
                     }
@@ -158,7 +166,7 @@ namespace Proximity_Valley_Server
             {
                 targets = _clientMap
                     .Where(kvp => (kvp.Value == senderMap || senderMap == "World")
-                                  && !(kvp.Key.Address.Equals(sender.Address) && kvp.Key.Port == sender.Port))
+                                  && (hearSelf || !(kvp.Key.Address.Equals(sender.Address) && kvp.Key.Port == sender.Port)))
                     .Select(kvp => kvp.Key)
                     .ToList();
             }

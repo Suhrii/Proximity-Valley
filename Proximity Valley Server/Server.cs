@@ -4,7 +4,17 @@ class Program
 {
     static async Task Main(string[] args)
     {
-        VoiceServer server = new();
+        bool hearSelf = false;
+
+        foreach (string arg in args)
+        {
+            if (arg.StartsWith("--hearSelf"))
+            {
+                hearSelf = true;
+            }
+        }
+
+        VoiceServer server = new(hearSelf);
         await server.StartAsync();
     }
 }

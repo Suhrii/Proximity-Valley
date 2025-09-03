@@ -1,10 +1,8 @@
 ﻿using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics.PackedVector;
 using NAudio.Wave;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
-using System;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -25,12 +23,12 @@ public class VoiceClient
     // enthält für jeden anderen Spieler den aktuellen Audio‑Stream
     internal readonly Dictionary<long, PlayerAudioStream> playerAudioStreams = new();
 
-	public enum PacketType : byte
-	{
-		Audio = 0x01,
-		Location = 0x02,
-		Connect = 0x03,
-		Disconnect = 0x04,
+    public enum PacketType : byte
+    {
+        Audio = 0x01,
+        Location = 0x02,
+        Connect = 0x03,
+        Disconnect = 0x04,
     }
 
     public VoiceClient(IMonitor monitor)
@@ -68,6 +66,8 @@ public class VoiceClient
                 byte extraData = reader.ReadByte();
                 byte[] payload = reader.ReadBytes((int)(stream.Length - stream.Position));
 
+                //Monitor.Log($"[Voice] Received {payload.Length} bytes (type={pType}) from {playerId}", LogLevel.Debug);
+
                 if (pType == (byte)PacketType.Audio)
                     _ = Task.Run(() => ProcessIncomingAudio(playerId, payload, extraData));
                 else
@@ -83,11 +83,13 @@ public class VoiceClient
     private void ProcessIncomingAudio(long playerId, byte[] audioData, byte extraData)
     {
         // 1) kein Self‑Audio
+        Monitor.Log($"[Voice] Processing audio from {playerId}, {audioData.Length} bytes", LogLevel.Trace);
         if (playerId == modEntry.playerID)
             if (!modEntry.Config.HearSelf)
                 return;
 
         // 2) nur echte Daten
+        Monitor.Log($"[Voice] Audio data length: {audioData.Length}", LogLevel.Trace);
         if (audioData.Length == 0)
             return;
 
@@ -95,6 +97,7 @@ public class VoiceClient
         // hol (oder erstelle) den Stream für diesen Spieler
         if (!playerAudioStreams.TryGetValue(playerId, out PlayerAudioStream stream))
         {
+            Monitor.Log($"[Voice] Creating new audio stream for player {playerId}", LogLevel.Trace);
             // initiale Lautstärke und Pan aus der Distanzberechnung
             (float volume, float pan) = GetVolumeAndPan(Game1.player, modEntry.GetFarmerByID(playerId));
 
@@ -121,20 +124,26 @@ public class VoiceClient
         if (!Context.IsWorldReady)
             return;
 
+        // Debug all streams to see whats in there
+        Monitor.Log($"[Voice] Current audio streams: {string.Join(", ", playerAudioStreams.Keys)}", LogLevel.Debug);
         foreach (KeyValuePair<long, PlayerAudioStream> kvp in playerAudioStreams.ToList())  // ToList, damit wir nicht währenddessen ändern
         {
             long playerId = kvp.Key;
             PlayerAudioStream stream = kvp.Value;
 
+            Monitor.Log($"[Voice] Updating audio stream for player {playerId}", LogLevel.Debug);
+
             // Basiswerte aus Entfernung/Direktion
             var remote = modEntry.GetFarmerByID(playerId);
             if (remote == null)
             {
+                Monitor.Log($"[Voice] Player {playerId} not found, muting audio", LogLevel.Debug);
                 // Spieler nicht gefunden -> komplett stumm schalten
                 stream.UpdatePanAndVolume(0, 0);
                 continue;
             }
             (float volume, float pan) = GetVolumeAndPan(Game1.player, remote, stream.isGlobalTalking);
+            Monitor.Log($"[Voice] Player {playerId} volume: {volume}, pan: {pan}", LogLevel.Debug);
 
             stream.UpdatePanAndVolume(pan, volume * modEntry.Config.OutputVolume);
         }
@@ -196,7 +205,7 @@ public class VoiceClient
     }
 
     internal float micVolumeLevel = 0;
-    private void CalculateMicVolume (byte[] buffer, int bytes)
+    private void CalculateMicVolume(byte[] buffer, int bytes)
     {
         short[] sampleBuffer = new short[bytes / 2];
         Buffer.BlockCopy(buffer, 0, sampleBuffer, 0, bytes);

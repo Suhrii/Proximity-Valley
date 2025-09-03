@@ -417,6 +417,8 @@ public class ModEntry : Mod
         if (!Context.IsWorldReady || !Game1.game1.IsActive)
             return;
 
+        playerID = Game1.player.UniqueMultiplayerID;
+
         if (Config.AutoZoomToMapSize)
             UpdateZoom();
 
@@ -828,6 +830,8 @@ public class ModEntry : Mod
 
     public Farmer? GetFarmerByID(long id)
     {
+        // Log all online farmers
+        Monitor.Log($"[Voice] Online Farmers: {string.Join(", ", Game1.getOnlineFarmers().Select(f => $"{f.displayName} ({f.UniqueMultiplayerID})"))}", LogLevel.Debug);
         return Game1.getOnlineFarmers().FirstOrDefault(p => p?.UniqueMultiplayerID == id);
     }
 
