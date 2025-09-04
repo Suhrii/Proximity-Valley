@@ -145,6 +145,8 @@ public class VoiceClient
             (float volume, float pan) = GetVolumeAndPan(Game1.player, remote, stream.isGlobalTalking);
             Monitor.Log($"[Voice] Player {playerId} volume: {volume}, pan: {pan}", LogLevel.Debug);
 
+            if (!modEntry.Config.EnablePanning)
+                pan = 1.0f;
             stream.UpdatePanAndVolume(pan, volume * modEntry.Config.OutputVolume);
         }
     }
@@ -291,11 +293,14 @@ public class VoiceClient
         //float volume = Math.Max(0f, 1f - (distance / maxDistance));
         //volume = MathF.Pow(volume, 1.5f); // optional: sanfterer Abfall
         float volume = (float)VolumeFallOffFuntion(distance / Game1.tileSize, 1.1f, 45, 12, 0.1f);
-        if (talkingGlobal) volume = 1;
+        if (talkingGlobal)
+            volume = 1;
 
         // 3. Richtung für Panning (Links/Rechts)
         float dx = remote.Position.X - local.Position.X;
         float pan = Math.Clamp(dx / maxDistance, -1f, 1f); // -1 = links, 1 = rechts
+        if (talkingGlobal)
+            pan = 1.0f;
 
         return (volume, pan);
     }

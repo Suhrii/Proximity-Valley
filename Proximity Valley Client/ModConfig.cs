@@ -25,6 +25,7 @@ public class ModConfig
     public int OutputVolume{ get; set; } = 1;
     public bool PushToTalk { get; set; } = false;
     public bool HearSelf { get; set; } = false;
+    public bool EnablePanning { get; set; } = true;
 
     // Geräte
     public int WaveInDevice { get; set; } = 0;

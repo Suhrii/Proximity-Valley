@@ -379,7 +379,7 @@ public class ModEntry : Mod
 
             #region Per Player Volume Slider 
 
-            if (Config.ShowPlayerNamesOnLeft)
+            if (Config.ShowPlayerNamesOnLeft && 1 == 2) // erstmal aus
             {
                 int sliderX = 400;
                 int sliderY = b.GraphicsDevice.Viewport.Height - 190 - (index * 50);
@@ -649,6 +649,14 @@ public class ModEntry : Mod
                 tooltip: () => "Höre das eigene Mikrofon",
                 getValue: () => Config.HearSelf,
                 setValue: value => Config.HearSelf = value
+            );
+
+            gmcm.AddBoolOption(
+                mod: this.ModManifest,
+                name: () => "Enable Panning",
+                tooltip: () => "Panning bei anderen Spielern aktivieren",
+                getValue: () => Config.EnablePanning,
+                setValue: value => Config.EnablePanning = value
             );
 
 
