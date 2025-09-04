@@ -23,6 +23,9 @@ public class VoiceClient
     // enthält für jeden anderen Spieler den aktuellen Audio‑Stream
     internal readonly Dictionary<long, PlayerAudioStream> playerAudioStreams = new();
 
+    // VoiceClient.cs (oben in der Klasse)
+    private NoiseSuppressor? noiseSuppressor;
+
     public enum PacketType : byte
     {
         Audio = 0x01,
@@ -160,25 +163,27 @@ public class VoiceClient
             DeviceNumber = modEntry.Config.WaveInDevice
         };
 
+        noiseSuppressor = new NoiseSuppressor(modEntry.Config.SampleRate, modEntry.Config.Channels);
+
         waveIn.DataAvailable += (s, e) =>
         {
             try
             {
-                // wenn gemuted, dann nichts senden
                 if (modEntry.isMuted) return;
-
-                // wenn PushToTalk aktiviert ist, dann nur senden, wenn Taste gedrückt
                 if (modEntry.Config.PushToTalk && !modEntry.isPushToTalking) return;
 
+                // 1) Boost (wie gehabt)
                 byte[] buffer = BoostAudio(e.Buffer, e.BytesRecorded);
 
-                CalculateMicVolume(buffer, e.BytesRecorded);
+                // 2) NEU: Hintergrundgeräusche unterdrücken (in-place, wirkt auf 'buffer'/e.Buffer)
+                noiseSuppressor?.ProcessInPlace(buffer, e.BytesRecorded);
 
+                // 3) Levelmeter & VAD auf dem bearbeiteten Signal
+                CalculateMicVolume(buffer, e.BytesRecorded);
                 if (!ShouldSendAudio(buffer)) return;
 
-                // **roh**es PCM senden – wird in SendPacket verschlüsselt
-                byte[] audioPayload = e.Buffer.Take(e.BytesRecorded).ToArray();
-
+                // 4) Senden (e.Buffer == buffer, wurde in-place verändert)
+                byte[] audioPayload = e.Buffer.AsSpan(0, e.BytesRecorded).ToArray();
                 SendPacket(PacketType.Audio, modEntry.playerID, audioPayload);
             }
             catch (Exception ex)
@@ -186,6 +191,7 @@ public class VoiceClient
                 Monitor.Log($"[Voice] Audio Send ERROR: {ex.Message}", LogLevel.Warn);
             }
         };
+
 
         waveIn.StartRecording();
         Monitor.Log("[Voice] Microphone input started", LogLevel.Debug);
