@@ -91,7 +91,7 @@ public class ModEntry : Mod
 
 
         Spectating spectating = new(helper);
-        WorldMapExtension worldMapExtension = new(helper);
+        //WorldMapExtension worldMapExtension = new(helper, Monitor);
     }
 
     private void Multiplayer_PeerConnected(object? sender, PeerConnectedEventArgs e)
